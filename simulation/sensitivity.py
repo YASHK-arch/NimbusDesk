@@ -3,46 +3,53 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+from simulation.reconcile import ReconciledParams, reconcile_assumptions
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from state.schemas import Assumption, CompanySnapshot
 
 
 def compute_tornado_sensitivity(
     strategy: str,
-    assumptions_list: List[Assumption],
+    assumptions_list: Optional[List[Assumption]] = None,
+    reconciled: Optional[ReconciledParams] = None,
     metric_key: str = "net_contribution_12",
     company: Optional[CompanySnapshot] = None,
 ) -> List[Dict[str, Any]]:
-    """Compute one-at-a-time (OAT) sensitivity swings for each assumption (Tornado Chart).
+    """Compute one-at-a-time (OAT) sensitivity swings for simulated parameters (Tornado Chart).
 
-    Returns assumptions ranked from largest swing to smallest swing.
+    Only iterates over simulated parameters (in SIM_PARAMS), de-duplicated and sorted by impact.
     """
-    # 1. Base parameter dictionary
-    base_params = {asm.name: asm.base for asm in assumptions_list}
+    if reconciled is None:
+        reconciled = reconcile_assumptions(assumptions_list or [])
+
+    base_params = reconciled.simulated_params
     base_run = simulate(strategy, "expected", base_params, company=company)
     baseline_value = base_run.outputs[metric_key]
 
     tornado_items: List[Dict[str, Any]] = []
 
-    for asm in assumptions_list:
+    for param in reconciled.parameters:
+        if not param.is_simulated:
+            continue
+
         # High run
-        high_params = copy_and_set(base_params, asm.name, asm.high)
+        high_params = copy_and_set(base_params, param.name, param.high)
         high_run = simulate(strategy, "oat_high", high_params, company=company)
         high_val = high_run.outputs[metric_key]
 
         # Low run
-        low_params = copy_and_set(base_params, asm.name, asm.low)
+        low_params = copy_and_set(base_params, param.name, param.low)
         low_run = simulate(strategy, "oat_low", low_params, company=company)
         low_val = low_run.outputs[metric_key]
 
         swing = abs(high_val - low_val)
         tornado_items.append({
-            "assumption_name": asm.name,
-            "unit": asm.unit,
-            "provenance": asm.provenance,
-            "low_param": asm.low,
-            "base_param": asm.base,
-            "high_param": asm.high,
+            "assumption_name": param.name,
+            "unit": param.unit,
+            "provenance": param.provenance,
+            "low_param": param.low,
+            "base_param": param.base,
+            "high_param": param.high,
             "low_outcome": round(low_val, 2),
             "base_outcome": round(baseline_value, 2),
             "high_outcome": round(high_val, 2),

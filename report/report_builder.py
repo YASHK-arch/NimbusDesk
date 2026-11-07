@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from report.decision_logic import compute_confidence, extract_min_runway_constraint, rank_strategies
+from simulation.reconcile import reconcile_assumptions
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C
 from simulation.sensitivity import compute_tornado_sensitivity, find_flip_point
 from state.company import load_company_snapshot
@@ -110,7 +111,12 @@ def build_consolidated_report(
     competitor_candidate = STRATEGY_C if top_strat_candidate != STRATEGY_C else STRATEGY_B
 
     # 5. Sensitivity Tornado & Flip-Points
-    tornado_data = compute_tornado_sensitivity(top_strat_candidate, state.assumptions, company=company)
+    reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
+    tornado_data = compute_tornado_sensitivity(
+        top_strat_candidate,
+        reconciled=reconciled,
+        company=company,
+    )
     flip_point_data = find_flip_point(
         primary_strategy=top_strat_candidate,
         competing_strategy=competitor_candidate,
@@ -144,21 +150,38 @@ def build_consolidated_report(
         recommendation = "Do not proceed: insufficient simulation data"
         headline_thesis = "Unable to verify financial feasibility due to missing simulation results."
 
-    # 6. Assumption Ledger
+    # 6. Reconciled Assumption Ledger (De-duplicated with contributing agents)
     ledger = [
         {
-            "name": asm.name,
-            "low": asm.low,
-            "base": asm.base,
-            "high": asm.high,
-            "unit": asm.unit,
-            "provenance": asm.provenance,
-            "source_ref": asm.source_ref,
-            "confidence": asm.confidence,
-            "proposed_by": asm.proposed_by,
-            "challenged_by_skeptic": asm.challenged_by_skeptic,
+            "name": p.name,
+            "low": p.low,
+            "base": p.base,
+            "high": p.high,
+            "unit": p.unit,
+            "provenance": p.provenance,
+            "source_ref": p.source_ref,
+            "is_simulated": p.is_simulated,
+            "contested": p.contested,
+            "contributing_agents": p.contributing_agents,
+            "proposed_by": ", ".join(p.contributing_agents),
+            "challenged_by_skeptic": any(
+                a.challenged_by_skeptic for a in state.assumptions if a.name == p.name
+            ),
         }
-        for asm in state.assumptions
+        for p in reconciled.parameters
+    ]
+
+    context_ledger = [
+        {
+            "name": p.name,
+            "low": p.low,
+            "base": p.base,
+            "high": p.high,
+            "unit": p.unit,
+            "provenance": p.provenance,
+            "contributing_agents": p.contributing_agents,
+        }
+        for p in reconciled.context_params
     ]
 
     # 7. Risks and Uncertainties (Templated from computed metrics)
@@ -248,6 +271,7 @@ def build_consolidated_report(
             "sensitivity_tornado": tornado_data,
             "flip_point": flip_point_data,
             "assumption_ledger": ledger,
+            "context_assumptions": context_ledger,
             "risks": risks,
             "verification_summary": verification_summary,
             "execution_plan": execution_plan,
@@ -357,15 +381,31 @@ def render_report_markdown(report: Dict[str, Any], state: Optional[WorkflowState
         "---",
         "",
         "## 5. Assumption Ledger & Provenance",
-        "| Assumption | Range (Low / Base / High) | Unit | Provenance | Source | Skeptic Challenged |",
-        "|---|---|---|---|---|---|",
+        "### Simulated Parameters",
+        "| Parameter | Base | Range (Low / High) | Unit | Source | Contributing Agents | Contested? |",
+        "|---|---|---|---|---|---|---|",
     ])
     for a in sec["assumption_ledger"]:
-        chal = "YES" if a["challenged_by_skeptic"] else "No"
+        contested_badge = "`CONTESTED`" if a.get("contested") else "No"
+        agents_str = ", ".join(a.get("contributing_agents", [])) or a.get("proposed_by", "N/A")
         md.append(
-            f"| `{a['name']}` | {a['low']} / {a['base']} / {a['high']} | {a['unit']} | "
-            f"`{a['provenance']}` | {a['source_ref'] or 'N/A'} | {chal} |"
+            f"| `{a['name']}` | {a['base']} | {a['low']} - {a['high']} | {a['unit']} | "
+            f"`{a['provenance']}` ({a['source_ref'] or 'N/A'}) | {agents_str} | {contested_badge} |"
         )
+
+    if sec.get("context_assumptions"):
+        md.extend([
+            "",
+            "### Operational Context",
+            "| Parameter | Base | Range (Low / High) | Unit | Source | Contributing Agents |",
+            "|---|---|---|---|---|---|",
+        ])
+        for ca in sec["context_assumptions"]:
+            agents_str = ", ".join(ca.get("contributing_agents", [])) or "N/A"
+            md.append(
+                f"| `{ca['name']}` | {ca['base']} | {ca['low']} - {ca['high']} | {ca['unit']} | "
+                f"`{ca['provenance']}` | {agents_str} |"
+            )
 
     md.extend([
         "",
