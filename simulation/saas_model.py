@@ -89,12 +89,22 @@ def simulate(
         effective_conversion *= 0.50
         effective_infra *= 2.0
         effective_cannibalization *= 1.50
+    elif scenario == "stress_infra_doubles":
+        effective_infra *= 2.0
+    elif scenario == "stress_conversion_collapse":
+        effective_conversion *= 0.50
+    elif scenario == "stress_large_customer_churn":
+        # Handled below by reducing initial enterprise customer cohort by 30%
+        pass
 
     # Initial state initialization from company snapshot
     cash = company.cash_balance
     starter_users = next((p.active_customers for p in company.plans if p.plan_name == "Starter"), 600)
     pro_users = next((p.active_customers for p in company.plans if p.plan_name == "Pro"), 350)
     ent_users = next((p.active_customers for p in company.plans if p.plan_name == "Enterprise"), 45)
+
+    if scenario == "stress_large_customer_churn":
+        ent_users = max(1, int(ent_users * 0.70))  # 30% immediate enterprise churn in month 1
 
     starter_price = next((p.price_per_month for p in company.plans if p.plan_name == "Starter"), 49.0)
     pro_price = next((p.price_per_month for p in company.plans if p.plan_name == "Pro"), 199.0)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Assumption(BaseModel):
@@ -20,6 +20,14 @@ class Assumption(BaseModel):
     confidence: float = Field(0.5, ge=0.0, le=1.0, description="Confidence score between 0.0 and 1.0")
     proposed_by: Optional[str] = Field(None, description="Agent identity that introduced the assumption")
     challenged_by_skeptic: bool = Field(False, description="Flag set if Skeptic challenged this assumption")
+
+    @model_validator(mode="after")
+    def validate_bounds_ordering(self) -> "Assumption":
+        if not (self.low <= self.base <= self.high):
+            raise ValueError(
+                f"Assumption '{self.name}' must satisfy low <= base <= high; got low={self.low}, base={self.base}, high={self.high}"
+            )
+        return self
 
 
 class Evidence(BaseModel):

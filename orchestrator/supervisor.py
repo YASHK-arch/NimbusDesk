@@ -16,6 +16,7 @@ from conflict.resolver import resolve_conflicts_with_simulation
 from orchestrator.checkpoint import CheckpointStore
 from orchestrator.recovery import RecoveryPolicy
 from report.report_builder import build_consolidated_report
+from simulation.params import build_scenario_params
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from state.company import load_company_snapshot
 from verification.skeptic_audit import run_skeptic_audit
@@ -291,12 +292,27 @@ class Supervisor:
             state.conflicts = resolved_conflicts
             state.simulation_runs.extend(conflict_sim_runs)
 
-            # 2. Run standard 3 strategies x 3 scenarios matrix
-            base_params = {asm.name: asm.base for asm in state.assumptions}
+            # 2. Run distinct scenario matrix: 3 strategies x (conservative, expected, optimistic) + 3 stress scenarios
             strategies = [STRATEGY_A, STRATEGY_B, STRATEGY_C]
-            scenarios = ["conservative", "expected", "optimistic"]
+            core_scenarios = ["conservative", "expected", "optimistic"]
+            stress_scenarios = ["stress_infra_doubles", "stress_conversion_collapse", "stress_large_customer_churn"]
+
+            # Core scenarios with favorable/unfavorable bounds
             for strat in strategies:
-                for scen in scenarios:
+                for scen in core_scenarios:
+                    params = build_scenario_params(state.assumptions, scen)
+                    run = simulate(strat, scen, params)
+                    state.simulation_runs.append(run)
+                    await self.bus.emit(
+                        event_type="simulation_run",
+                        agent="Supervisor",
+                        payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
+                    )
+
+            # Stress scenarios applied against expected base parameters
+            base_params = build_scenario_params(state.assumptions, "expected")
+            for strat in strategies:
+                for scen in stress_scenarios:
                     run = simulate(strat, scen, base_params)
                     state.simulation_runs.append(run)
                     await self.bus.emit(

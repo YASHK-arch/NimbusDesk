@@ -35,6 +35,7 @@
 | **Step 13** | Human Approval Gate, History & Calibration Screen | **COMPLETED** | POST /approve gate stores DecisionRecord in history, calibration stats computed with average error & most-wrong assumptions |
 | **Step 14** | Hardening, Demo Fallback Cache & Documentation | **COMPLETED** | All 46 tests passing, demo script in DEMO_SCRIPT.md, known-good run cached in data/known_good_run.json, comprehensive README |
 | **Fix 1** | Dynamic Strategy Ranking & Removal of Hardcoded Literals | **COMPLETED** | Pure functions in `report/decision_logic.py` (`rank_strategies`, `compute_confidence`). Dynamic recommendations based on runway floor; low cash triggers honest "Do not proceed"; all hardcoded numbers removed from report builder. (52/52 tests pass). |
+| **Fix 2** | Scenario Variation, Stress Matrix & Assumption Bounds Validation | **COMPLETED** | Single source of truth in `simulation/params.py` (`SIM_PARAMS`, `build_scenario_params`). Strict `conservative < expected < optimistic` ordering, 3 stress scenarios (`stress_infra_doubles`, `stress_conversion_collapse`, `stress_large_customer_churn`), and `Assumption` `low <= base <= high` validator. (57/57 tests pass). |
 
 ---
 
