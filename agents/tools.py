@@ -50,16 +50,19 @@ def get_funnel_metrics() -> Dict[str, Any]:
     }
 
 
-def get_infra_headroom() -> Dict[str, Any]:
+def get_infra_headroom(active_free_users: int = 0) -> Dict[str, Any]:
     """CTO Tool: Retrieve compute headroom and marginal infra cost per free user."""
     snapshot = load_company_snapshot()
+    max_safe = snapshot.infra.get("max_safe_free_users_without_sharding", 6000)
     return {
         "current_monthly_cost": snapshot.infra["current_monthly_cost"],
         "paid_user_cost_per_month": snapshot.infra["paid_user_cost_per_month"],
         "free_user_marginal_cost_per_month": snapshot.infra["free_user_marginal_cost_per_month"],
         "database_cluster_utilization_pct": snapshot.infra["database_cluster_utilization_pct"],
         "max_concurrent_connections_headroom_pct": snapshot.infra["max_concurrent_connections_headroom_pct"],
-        "max_safe_free_users_without_sharding": 6000,
+        "max_safe_free_users_without_sharding": max_safe,
+        "active_free_users": active_free_users,
+        "headroom_remaining": max_safe - active_free_users,
     }
 
 

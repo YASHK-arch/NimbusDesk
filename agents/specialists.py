@@ -1,4 +1,11 @@
-"""Specialist AI agent implementations with distinct objectives, tools, and mock findings."""
+"""Specialist AI agent implementations with distinct objectives, tools, and mock findings.
+
+Strict Provenance & Unit Rules:
+- R4 / R7: No fabricated reports, benchmarks, or ungrounded external sources.
+- verified_data: strictly read from data/synthetic_company.json#<path> with base matching snapshot.
+- ai_assumption: mock assumptions tagged source_ref='mock: illustrative assumption'.
+- Units: ratio for fractions (0..1), USD for currency, users for counts, tickets/user/mo for rates.
+"""
 
 from __future__ import annotations
 
@@ -41,9 +48,9 @@ class CFOAgent(BaseAgent):
                     low=0.010,
                     base=0.015,
                     high=0.022,
-                    unit="%",
-                    provenance="external_research",
-                    source_ref="OpenView 2024 SaaS Product Benchmarks",
+                    unit="ratio",
+                    provenance="ai_assumption",
+                    source_ref="mock: illustrative assumption",
                     confidence=0.65,
                     proposed_by=self.name,
                 ),
@@ -52,20 +59,20 @@ class CFOAgent(BaseAgent):
                     low=0.06,
                     base=0.12,
                     high=0.20,
-                    unit="%",
-                    provenance="simulated_estimate",
-                    source_ref="NimbusDesk Starter churn elasticity model",
+                    unit="ratio",
+                    provenance="ai_assumption",
+                    source_ref="mock: illustrative assumption",
                     confidence=0.70,
                     proposed_by=self.name,
                 ),
                 Assumption(
                     name="min_acceptable_runway_months",
                     low=10.0,
-                    base=12.0,
-                    high=14.0,
+                    base=12.6,
+                    high=15.0,
                     unit="months",
                     provenance="verified_data",
-                    source_ref="NimbusDesk Board Mandate Q3",
+                    source_ref="data/synthetic_company.json#runway_months",
                     confidence=0.95,
                     proposed_by=self.name,
                 ),
@@ -73,7 +80,7 @@ class CFOAgent(BaseAgent):
             evidence=[
                 Evidence(
                     source_type="company_data",
-                    source_ref="financial_summary",
+                    source_ref="data/synthetic_company.json#runway_months",
                     snippet="Current runway is 12.6 months with $115k monthly net burn. Adding $20k/mo net burn reduces runway to under 10.7 months.",
                 )
             ],
@@ -99,7 +106,7 @@ class GrowthAgent(BaseAgent):
         return Finding(
             agent=self.name,
             task_id=task_id,
-            claim="A free tier unlocks 3,500 monthly signups and creates a strong product-led upgrade funnel, converting at 3.5%-6.5% and reducing CAC by 40%.",
+            claim="A free tier unlocks 3,200 monthly signups and creates a strong product-led upgrade funnel, converting at 3.5%-6.5% and reducing CAC by 40%.",
             recommendation="proceed",
             confidence=0.88,
             assumptions=[
@@ -108,20 +115,20 @@ class GrowthAgent(BaseAgent):
                     low=0.035,
                     base=0.045,
                     high=0.065,
-                    unit="%",
-                    provenance="external_research",
-                    source_ref="ProductLed PLG Benchmark Report 2024",
+                    unit="ratio",
+                    provenance="ai_assumption",
+                    source_ref="mock: illustrative assumption",
                     confidence=0.75,
                     proposed_by=self.name,
                 ),
                 Assumption(
                     name="monthly_free_signups",
-                    low=2500,
-                    base=3500,
-                    high=5000,
-                    unit="users/mo",
-                    provenance="simulated_estimate",
-                    source_ref="NimbusDesk 45k monthly visitor model",
+                    low=2500.0,
+                    base=3200.0,
+                    high=5000.0,
+                    unit="users",
+                    provenance="verified_data",
+                    source_ref="data/synthetic_company.json#funnel.estimated_free_tier_monthly_signups",
                     confidence=0.80,
                     proposed_by=self.name,
                 ),
@@ -130,9 +137,9 @@ class GrowthAgent(BaseAgent):
                     low=0.25,
                     base=0.40,
                     high=0.60,
-                    unit="%",
-                    provenance="external_research",
-                    source_ref="SaaS Growth Index 2024",
+                    unit="ratio",
+                    provenance="ai_assumption",
+                    source_ref="mock: illustrative assumption",
                     confidence=0.70,
                     proposed_by=self.name,
                 ),
@@ -140,7 +147,7 @@ class GrowthAgent(BaseAgent):
             evidence=[
                 Evidence(
                     source_type="company_data",
-                    source_ref="funnel_metrics",
+                    source_ref="data/synthetic_company.json#funnel.monthly_unique_visitors",
                     snippet="45,000 unique monthly visitors currently convert at only 1.2% to trial; free tier capture rate typically reaches 7-10% of visitors.",
                 )
             ],
@@ -175,20 +182,20 @@ class CTOAgent(BaseAgent):
                     low=0.90,
                     base=1.20,
                     high=1.80,
-                    unit="USD/user/mo",
+                    unit="USD",
                     provenance="verified_data",
-                    source_ref="NimbusDesk AWS CloudWatch Breakdown",
+                    source_ref="data/synthetic_company.json#infra.free_user_marginal_cost_per_month",
                     confidence=0.90,
                     proposed_by=self.name,
                 ),
                 Assumption(
                     name="max_free_tier_users_before_sharding",
-                    low=4500,
-                    base=6000,
-                    high=8000,
+                    low=4500.0,
+                    base=6000.0,
+                    high=8000.0,
                     unit="users",
-                    provenance="simulated_estimate",
-                    source_ref="RDS PostgreSQL connection pool stress benchmarks",
+                    provenance="verified_data",
+                    source_ref="data/synthetic_company.json#infra.max_safe_free_users_without_sharding",
                     confidence=0.85,
                     proposed_by=self.name,
                 ),
@@ -196,7 +203,7 @@ class CTOAgent(BaseAgent):
             evidence=[
                 Evidence(
                     source_type="company_data",
-                    source_ref="infra_headroom",
+                    source_ref="data/synthetic_company.json#infra.database_cluster_utilization_pct",
                     snippet="Database cluster operates at 58% utilization; 42% connection headroom remains before replica pool expansion.",
                 )
             ],
@@ -232,8 +239,8 @@ class CustomerAgent(BaseAgent):
                     base=0.05,
                     high=0.08,
                     unit="tickets/user/mo",
-                    provenance="simulated_estimate",
-                    source_ref="Zendesk PLG Support Benchmark",
+                    provenance="verified_data",
+                    source_ref="data/synthetic_company.json#support.free_user_ticket_rate_estimate",
                     confidence=0.75,
                     proposed_by=self.name,
                 )
@@ -241,7 +248,7 @@ class CustomerAgent(BaseAgent):
             evidence=[
                 Evidence(
                     source_type="company_data",
-                    source_ref="support_capacity",
+                    source_ref="data/synthetic_company.json#support.total_monthly_tickets",
                     snippet="Support team currently handles 119 tickets/mo with 481 tickets buffer. 5,000 free users generating 0.05 tickets = 250 tickets, exhausting 52% of buffer.",
                 )
             ],
@@ -274,8 +281,8 @@ class ProductAgent(BaseAgent):
                     base=1.35,
                     high=1.6,
                     unit="multiplier",
-                    provenance="simulated_estimate",
-                    source_ref="Internal product friction model",
+                    provenance="ai_assumption",
+                    source_ref="mock: illustrative assumption",
                     confidence=0.70,
                     proposed_by=self.name,
                 )
@@ -283,7 +290,7 @@ class ProductAgent(BaseAgent):
             evidence=[
                 Evidence(
                     source_type="calculation",
-                    source_ref="engineering_capacity",
+                    source_ref="data/synthetic_company.json#engineering_capacity.free_tier_dev_effort_weeks",
                     snippet="Implementing usage caps requires 4 developer weeks across 2 dedicated billing engineers.",
                 )
             ],
@@ -318,9 +325,9 @@ class SkepticAgent(BaseAgent):
                     low=0.012,
                     base=0.020,
                     high=0.030,
-                    unit="%",
-                    provenance="simulated_estimate",
-                    source_ref="Skeptic Downside Stress Model",
+                    unit="ratio",
+                    provenance="ai_assumption",
+                    source_ref="mock: illustrative assumption",
                     confidence=0.70,
                     proposed_by=self.name,
                     challenged_by_skeptic=True,
@@ -329,8 +336,8 @@ class SkepticAgent(BaseAgent):
             evidence=[
                 Evidence(
                     source_type="benchmark",
-                    source_ref="B2B Ticketing Case Studies",
-                    snippet="Median freemium B2B ticketing conversion is 1.8%, not 4.5%. Growth's assumption exceeds 85th percentile.",
+                    source_ref="data/benchmarks.json#free_to_paid_conversion_b2b_median",
+                    snippet="Illustrative B2B freemium benchmark median is 2.2% (data/benchmarks.json), substantially below Growth's 4.5% projection.",
                 )
             ],
             limitations=["Assumes competitor pricing structures remain static."],

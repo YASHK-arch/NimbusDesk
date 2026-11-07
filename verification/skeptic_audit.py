@@ -2,8 +2,23 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from state.schemas import Assumption, Finding
+
+BENCHMARKS_PATH = Path(__file__).resolve().parent.parent / "data" / "benchmarks.json"
+
+
+def _load_benchmark_value(metric_key: str, fallback: float) -> float:
+    try:
+        if BENCHMARKS_PATH.exists():
+            with open(BENCHMARKS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return float(data.get(metric_key, {}).get("value", fallback))
+    except Exception:
+        pass
+    return fallback
 
 
 def run_skeptic_audit(
@@ -18,6 +33,7 @@ def run_skeptic_audit(
     - Generates audit challenges for the report.
     """
     challenges: List[str] = []
+    median_conv = _load_benchmark_value("free_to_paid_conversion_b2b_median", 0.022)
 
     for asm in assumptions:
         # Challenge 1: Aggressive free-to-paid conversion rate
@@ -26,7 +42,7 @@ def run_skeptic_audit(
             asm.confidence = round(max(0.40, asm.confidence - 0.20), 2)
             challenges.append(
                 f"Skeptic Challenge [{asm.proposed_by}]: Conversion assumption of {asm.base * 100:.1f}% "
-                f"exceeds B2B SaaS benchmark median (1.8%). Confidence downgraded to {asm.confidence}."
+                f"exceeds B2B SaaS benchmark median ({median_conv * 100:.1f}% from data/benchmarks.json). Confidence downgraded to {asm.confidence}."
             )
 
         # Challenge 2: Aggressive CAC reduction claims

@@ -19,7 +19,7 @@ def test_verification_all_checks_pass_on_valid_data():
             low=0.01,
             base=0.025,
             high=0.04,
-            unit="%",
+            unit="ratio",
             provenance="external_research",
             source_ref="benchmarks",
         )
@@ -45,7 +45,7 @@ def test_verification_catches_deliberately_corrupted_number():
             low=0.01,
             base=0.025,
             high=0.04,
-            unit="%",
+            unit="ratio",
             provenance="external_research",
             source_ref="benchmarks",
         )

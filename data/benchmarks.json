@@ -1,0 +1,26 @@
+{
+  "free_to_paid_conversion_b2b_median": {
+    "metric": "free_to_paid_conversion",
+    "value": 0.022,
+    "unit": "ratio",
+    "illustrative": true,
+    "sourced": false,
+    "notes": "Illustrative synthetic B2B SaaS benchmark for self-serve freemium conversion."
+  },
+  "starter_cannibalization_median": {
+    "metric": "starter_cannibalization_rate",
+    "value": 0.08,
+    "unit": "ratio",
+    "illustrative": true,
+    "sourced": false,
+    "notes": "Illustrative estimate for starter customer cannibalization upon freemium launch."
+  },
+  "free_user_ticket_rate_median": {
+    "metric": "free_user_monthly_tickets",
+    "value": 0.04,
+    "unit": "tickets/user/mo",
+    "illustrative": true,
+    "sourced": false,
+    "notes": "Illustrative ticket submission rate per active free tier user."
+  }
+}

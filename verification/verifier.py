@@ -6,6 +6,7 @@ and simulator traceability.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+from simulation.params import SIM_PARAMS
 from state.schemas import Assumption, CompanySnapshot, SimulationRun, VerificationResult
 
 
@@ -25,28 +26,31 @@ def verify_workflow(
     # Check 1: Unit Consistency
     valid_units = {
         "%",
-        "USD/user",
-        "USD/user/mo",
         "USD",
         "ratio",
         "users/mo",
         "users",
         "tickets/user/mo",
-        "tickets/user",
         "tickets",
         "multiplier",
         "months",
         "days",
-        "safety_ratio",
-        "index",
     }
-    unit_failures = [asm.name for asm in assumptions if asm.unit not in valid_units]
+    unit_failures: List[str] = []
+    for asm in assumptions:
+        if asm.name in SIM_PARAMS:
+            expected = SIM_PARAMS[asm.name]["unit"]
+            if asm.unit != expected:
+                unit_failures.append(f"{asm.name} (expected '{expected}', got '{asm.unit}')")
+        elif asm.unit not in valid_units:
+            unit_failures.append(f"{asm.name} (unrecognized unit '{asm.unit}')")
+
     if not unit_failures:
         results.append(
             VerificationResult(
                 check_name="unit_consistency",
                 status="passed",
-                detail=f"All {len(assumptions)} assumptions have standard dimension units.",
+                detail=f"All {len(assumptions)} assumptions have standard dimension units conforming to SIM_PARAMS.",
             )
         )
     else:
@@ -54,19 +58,38 @@ def verify_workflow(
             VerificationResult(
                 check_name="unit_consistency",
                 status="failed",
-                detail=f"Invalid units detected on assumptions: {unit_failures}",
+                detail=f"Invalid units detected on assumptions: {', '.join(unit_failures)}",
             )
         )
 
-    # Check 2: Provenance Tag Integrity
+    # Check 2: Provenance Tag Integrity & Snapshot Tie-outs
     valid_provenances = {"verified_data", "external_research", "simulated_estimate", "ai_assumption"}
-    prov_failures = [asm.name for asm in assumptions if asm.provenance not in valid_provenances]
+    prov_failures: List[str] = []
+    for asm in assumptions:
+        if asm.provenance not in valid_provenances:
+            prov_failures.append(f"{asm.name}: invalid provenance tag '{asm.provenance}'")
+        elif not asm.source_ref:
+            prov_failures.append(f"{asm.name}: missing source_ref")
+        elif asm.provenance == "verified_data":
+            if not asm.source_ref.startswith("data/synthetic_company.json#"):
+                prov_failures.append(f"{asm.name}: verified_data must reference data/synthetic_company.json#<path>")
+            else:
+                field_path = asm.source_ref.split("#")[1]
+                val: Any = company
+                try:
+                    for part in field_path.split("."):
+                        val = val[part] if isinstance(val, dict) else getattr(val, part)
+                    if abs(float(val) - float(asm.base)) > 0.05:
+                        prov_failures.append(f"{asm.name}: verified_data base ({asm.base}) != snapshot ({val})")
+                except Exception as e:
+                    prov_failures.append(f"{asm.name}: could not resolve path {field_path} in company snapshot ({e})")
+
     if not prov_failures:
         results.append(
             VerificationResult(
                 check_name="provenance_integrity",
                 status="passed",
-                detail="All assumptions have valid provenance tags and traceable source refs.",
+                detail="All assumptions have valid provenance tags and verified snapshot tie-outs.",
             )
         )
     else:
@@ -74,7 +97,7 @@ def verify_workflow(
             VerificationResult(
                 check_name="provenance_integrity",
                 status="failed",
-                detail=f"Assumptions lacking provenance: {prov_failures}",
+                detail=f"Provenance integrity failures: {'; '.join(prov_failures)}",
             )
         )
 
