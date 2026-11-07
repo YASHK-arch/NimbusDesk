@@ -25,6 +25,13 @@ from state.company import load_company_snapshot, load_seeded_decisions
 from state.event_bus import event_bus
 from state.schemas import DecisionRecord, WorkflowEvent
 from state.shared_state import WorkflowState
+from orchestrator.db import (
+    init_db,
+    SessionFactory,
+    DecisionModel,
+    DecisionReportModel,
+    HistoricalCalibrationModel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +40,14 @@ app = FastAPI(
     description="Operational Digital Twin & Decision Stress-Test Platform for SaaS Pricing and Packaging Decisions",
     version="0.1.0",
 )
+
+@app.on_event("startup")
+async def on_startup():
+    """Ensure database schema tables exist on application startup."""
+    try:
+        init_db()
+    except Exception as e:
+        logger.warning(f"Startup DB init notice: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -121,6 +136,22 @@ async def submit_decision(req: DecisionSubmitRequest):
     # Trigger async background execution
     asyncio.create_task(_run_workflow_background(decision.id, decision, dag, supervisor))
 
+    # Record initial decision in production database
+    try:
+        with SessionFactory() as session:
+            dec_row = DecisionModel(
+                id=decision.id,
+                question=decision.question,
+                decision_type=decision.type,
+                objective=decision.objective,
+                status="running",
+                approval_status="pending",
+            )
+            session.merge(dec_row)
+            session.commit()
+    except Exception as e:
+        logger.debug(f"DB decision record notice: {e}")
+
     return {
         "decision_id": decision.id,
         "question": decision.question,
@@ -139,6 +170,26 @@ async def _run_workflow_background(decision_id: str, decision, dag, supervisor: 
             injected_failures=injected,
         )
         _WORKFLOW_STATES[decision_id] = final_state
+
+        # Persist report and update decision status in database
+        if final_state.report:
+            try:
+                with SessionFactory() as session:
+                    rep_row = DecisionReportModel(
+                        decision_id=decision_id,
+                        recommendation=final_state.report.get("recommendation", ""),
+                        confidence=final_state.report.get("confidence", ""),
+                        primary_strategy=final_state.report.get("sections", {}).get("executive_summary", {}).get("primary_strategy", ""),
+                        headline_thesis=final_state.report.get("sections", {}).get("executive_summary", {}).get("headline_thesis", ""),
+                        report_json=json.dumps(final_state.report),
+                    )
+                    session.merge(rep_row)
+                    dec_row = session.query(DecisionModel).filter(DecisionModel.id == decision_id).first()
+                    if dec_row:
+                        dec_row.status = "completed"
+                    session.commit()
+            except Exception as e:
+                logger.debug(f"DB report record notice: {e}")
     except Exception as e:
         logger.error(f"Error during workflow execution {decision_id}: {e}")
         if decision_id in _WORKFLOW_STATES:

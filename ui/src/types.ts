@@ -1,3 +1,62 @@
+export interface Driver {
+  id: string;
+  name: string;
+  group: string;
+  low: number;
+  high: number;
+  unit: string;
+  distribution: 'Normal' | 'Uniform' | 'Triangular';
+  baselineLow: number;
+  baselineHigh: number;
+  tooltip?: string;
+  modified?: boolean;
+}
+
+export interface SimulationScenario {
+  name: 'pessimistic' | 'realistic' | 'optimistic';
+  label: string;
+  probability: number;
+  value: number;
+  rangeMin: number;
+  rangeMax: number;
+  color: string;
+  accentClass: string;
+  driverAverages: Record<string, number>;
+}
+
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  ts: string;
+  chart?: {
+    title: string;
+    source: string;
+    data: Array<{ year: string; value: number; forecast?: boolean }>;
+  };
+}
+
+export interface IntelFeedItem {
+  id: string;
+  severity: 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  origin: string;
+  period?: string;
+  dismissed: boolean;
+}
+
+export type OutputVariable =
+  | 'MRR'
+  | 'ARR'
+  | 'Operating Income'
+  | 'Gross Margin'
+  | 'Cash Runway'
+  | 'Paying Customers'
+  | 'Free Users'
+  | 'Infrastructure Cost'
+  | 'Support Load';
+
 export interface CompanySnapshot {
   name: string;
   tagline: string;
@@ -84,6 +143,58 @@ export interface Finding {
   limitations: string[];
   status: string;
 }
+
+// ─── Simulation Workspace types ──────────────────────────────────────────────
+
+export interface Driver {
+  id: string;
+  name: string;
+  group: string;
+  low: number;
+  high: number;
+  unit: string;
+  distribution: 'Normal' | 'Uniform' | 'Triangular';
+  baselineLow: number;
+  baselineHigh: number;
+  tooltip?: string;
+  modified?: boolean;
+}
+
+export interface SimulationScenario {
+  name: 'pessimistic' | 'realistic' | 'optimistic';
+  label: string;
+  probability: number;
+  value: number;
+  rangeMin: number;
+  rangeMax: number;
+  color: string;
+  accentClass: string;
+  driverAverages: Record<string, number>;
+}
+
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  ts: string;
+  chart?: {
+    title: string;
+    source: string;
+    data: Array<{ year: string; value: number; forecast?: boolean }>;
+  };
+}
+
+export interface IntelFeedItem {
+  id: string;
+  severity: 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  origin: string;
+  period?: string;
+  dismissed: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface DecisionReport {
   decision_id: string;

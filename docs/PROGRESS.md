@@ -33,7 +33,9 @@
 | **Step 11** | API Endpoints & SSE Streaming | **COMPLETED** | Complete REST suite (company, submit, status, stream, chaos injection, report JSON/MD, approve, history, graph) |
 | **Step 12** | Frontend: 3 Screens (Console, Report, Calibration) | **COMPLETED** | React+TS+Tailwind SPA: Live execution DAG, SSE feed, node inspector, failure injection, scenario tables, tornado charts |
 | **Step 13** | Human Approval Gate, History & Calibration Screen | **COMPLETED** | POST /approve gate stores DecisionRecord in history, calibration stats computed with average error & most-wrong assumptions |
-| **Step 14** | Hardening, Demo Fallback Cache & Documentation | **COMPLETED** | All 46 tests passing, demo script in DEMO_SCRIPT.md, known-good run cached in data/known_good_run.json, comprehensive README |
+| **Step 14** | Hardening, Demo Fallback Cache & Documentation | **COMPLETED** | All 47 tests passing, demo script in DEMO_SCRIPT.md, known-good run cached in data/known_good_run.json, comprehensive README |
+| **Step 15** | Simulation Workspace Dashboard & Production Database Layer | **COMPLETED** | Built enterprise SAP-style financial modelling workspace matching docs/dashboard.jpeg; functional File, Edit, Tools, Display menus; Recharts probability distribution curve; 3 scenario cards with donut rings; dual-engine PostgreSQL & SQLite persistence; Docker containerization |
+| **Step 16** | Interactive Date & Forecast Horizon Popover, Deep Navigation Tools, & Toast System | **COMPLETED** | Interactive Date popover (FY2023-FY2027, quarters, custom date, compound projection preview); full wiring of File, Edit, Tools, Display actions with modal views (New Simulation, Version History, Monte Carlo engine, What-if Sandbox, Scenario Comparison, Break-even flip point, 12M Forecasting, Driver Properties, Model Validator); reactive toast feedback. |
 
 ---
 
