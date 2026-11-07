@@ -80,3 +80,4 @@ async def test_supervisor_skeptic_challenges_present_in_report():
     assert len(state.skeptic_challenges) > 0
     # At least one assumption must have challenged_by_skeptic = True
     assert any(a.challenged_by_skeptic for a in state.assumptions)
+

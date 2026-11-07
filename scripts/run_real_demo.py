@@ -83,3 +83,4 @@ if __name__ == "__main__":
     except ConfigurationError as err:
         print(f"\n[CONFIGURATION ERROR] {err}")
         sys.exit(1)
+

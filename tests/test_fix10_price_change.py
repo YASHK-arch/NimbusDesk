@@ -78,3 +78,4 @@ async def test_full_price_change_workflow():
     scenarios = state.report["sections"]["scenario_table"]
     reported_strats = {s["strategy"] for s in scenarios}
     assert PRICE_STRAT_B in reported_strats
+

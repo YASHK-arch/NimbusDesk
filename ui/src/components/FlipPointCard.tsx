@@ -59,3 +59,4 @@ export const FlipPointCard: React.FC<FlipPointCardProps> = ({ flipPoint }) => {
     </div>
   );
 };
+

@@ -123,3 +123,4 @@ async def test_supervisor_runs_stress_scenarios_matrix():
     assert "stress_infra_doubles" in scenarios_present
     assert "stress_conversion_collapse" in scenarios_present
     assert "stress_large_customer_churn" in scenarios_present
+

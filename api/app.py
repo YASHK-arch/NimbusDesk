@@ -368,17 +368,30 @@ async def get_graph():
     return get_company_dependency_graph(highlight_affected=True)
 
 
-# Static SPA mounting for production UI
+# Static SPA mounting for production UI (with fallback to ui/index.html when unbuilt)
 UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
-if UI_DIST_DIR.exists() and (UI_DIST_DIR / "index.html").exists():
+UI_SRC_INDEX = Path(__file__).resolve().parent.parent / "ui" / "index.html"
+
+if UI_DIST_DIR.exists() and (UI_DIST_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=UI_DIST_DIR / "assets"), name="assets")
 
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        if full_path.startswith("api/") or full_path in ("health", "docs", "openapi.json"):
-            raise HTTPException(status_code=404, detail="Not Found")
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    if full_path.startswith("api/") or full_path in ("health", "docs", "openapi.json"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    
+    # 1. Try built static file from dist
+    if UI_DIST_DIR.exists():
         target_file = UI_DIST_DIR / full_path
         if target_file.exists() and target_file.is_file():
             return FileResponse(target_file)
-        return FileResponse(UI_DIST_DIR / "index.html")
+        if (UI_DIST_DIR / "index.html").exists():
+            return FileResponse(UI_DIST_DIR / "index.html")
+
+    # 2. Fallback to source index.html for testing without pre-built dist
+    if UI_SRC_INDEX.exists():
+        return FileResponse(UI_SRC_INDEX)
+
+    raise HTTPException(status_code=404, detail="Frontend assets not found")
 

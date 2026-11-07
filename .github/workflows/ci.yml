@@ -22,12 +22,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools wheel
           pip install -e ".[dev]"
 
       - name: Run Pytest Test Suite
         env:
           LLM_MODE: mock
+          PYTHONPATH: .
         run: |
           pytest tests/ -v
 
@@ -53,3 +54,4 @@ jobs:
       - name: Build Frontend Application
         working-directory: ui
         run: npm run build
+
