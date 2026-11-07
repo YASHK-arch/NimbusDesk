@@ -134,12 +134,18 @@ export interface DecisionReport {
       swing: number;
     }>;
     flip_point: {
+      exists?: boolean;
       primary_strategy: string;
       competing_strategy: string;
       parameter_name: string;
-      threshold: number;
+      threshold: number | null;
       threshold_display: string;
       statement: string;
+      flip_value?: number | null;
+      tested_range?: [number, number];
+      outcome_at_low?: number;
+      outcome_at_high?: number;
+      outcome_at_flip?: number;
     };
     assumption_ledger: Assumption[];
     risks: Array<{ category: string; description: string; mitigation: string }>;

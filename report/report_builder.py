@@ -129,11 +129,15 @@ def build_consolidated_report(
         top_strat = ranked[0]
         primary_strategy = top_strat.strategy
         recommendation = f"Proceed with {primary_strategy} under Stated Guardrails"
+        if flip_point_data.get("exists", True) and flip_point_data.get("flip_value") is not None:
+            flip_qualifier = f"The recommendation holds as long as conversion remains above {flip_display}."
+        else:
+            flip_qualifier = "The recommendation is robust across the entire tested parameter range (no flip point detected)."
         headline_thesis = (
             f"Launching {primary_strategy} delivers ${top_strat.mrr_month_12:,.0f} MRR with "
             f"{top_strat.runway_months_12:.1f} months runway and ${top_strat.net_contribution_12:,.0f} "
             f"net contribution at Month 12, satisfying the {min_runway:.1f}-month runway constraint. "
-            f"The recommendation holds as long as conversion remains above {flip_display}."
+            f"{flip_qualifier}"
         )
     elif ranked:
         least_bad = ranked[0]
@@ -366,6 +370,10 @@ def render_report_markdown(report: Dict[str, Any], state: Optional[WorkflowState
         "",
         "## 4. Sensitivity Analysis (Tornado) & Flip-Point",
         f"**Decision Flip-Point Finding:** {flip['statement']}",
+    ])
+    if flip.get("exists") is False:
+        md.append("> **Robust to Variation:** No decision flip point exists within the tested interval. The strategy maintains its relative position across tested parameter bounds.")
+    md.extend([
         "",
         "| Rank | Parameter | Base | Low Swung Outcome | High Swung Outcome | Net Impact Swing |",
         "|---|---|---|---|---|---|",

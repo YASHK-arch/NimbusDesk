@@ -7,9 +7,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
-  Sliders,
 } from 'lucide-react';
 import { DecisionReport } from '../types';
+import { FlipPointCard } from './FlipPointCard';
 
 interface DecisionReportProps {
   report: DecisionReport | null;
@@ -76,22 +76,7 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
       </div>
 
       {/* 2. Critical Flip-Point Box */}
-      {flip_point && (
-        <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl p-5 flex items-start gap-4">
-          <div className="bg-amber-500/20 p-2.5 rounded-lg text-amber-400 shrink-0">
-            <Sliders className="w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-amber-300 uppercase tracking-wide">
-              Deterministic Flip-Point Condition
-            </h3>
-            <p className="text-sm text-slate-200 font-medium mt-1">{flip_point.statement}</p>
-            <span className="text-xs text-amber-400/80 mt-1 inline-block">
-              Threshold derived via parametric sensitivity sweep across Strategy B vs Strategy C.
-            </span>
-          </div>
-        </div>
-      )}
+      {flip_point && <FlipPointCard flipPoint={flip_point} />}
 
       {/* 3. Strategy Scenario Comparison Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">

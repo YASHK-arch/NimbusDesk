@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from simulation.reconcile import ReconciledParams, reconcile_assumptions
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from state.schemas import Assumption, CompanySnapshot
+from state.company import load_company_snapshot
 
 
 def compute_tornado_sensitivity(
@@ -73,9 +74,13 @@ def find_flip_point(
 ) -> Dict[str, Any]:
     """Find the exact threshold where the winning strategy flips.
 
-    Returns:
-        threshold, winning_strategy_above, plain_language_statement.
+    Uses bisection to find the root where primary and competing strategy outcomes cross.
+    If outcomes at both bounds have the same sign, returns exists=False with an honest
+    statement and no fabricated midpoint fallback.
     """
+    if company is None:
+        company = load_company_snapshot()
+
     if base_assumptions is None:
         base_assumptions = {
             "free_to_paid_conversion": 0.025,
@@ -85,44 +90,83 @@ def find_flip_point(
             "free_user_monthly_tickets": 0.05,
         }
 
-    # Evaluate competitor strategy outcome
-    competitor_run = simulate(competing_strategy, "expected", base_assumptions, company=company)
-    competitor_metric = competitor_run.outputs["net_contribution_12"]
+    base_val = base_assumptions.get(parameter_name, (param_min + param_max) / 2.0)
 
-    flip_threshold: Optional[float] = None
-    step_size = (param_max - param_min) / steps
-
-    # Scan parameter values
-    previous_diff = None
-    for i in range(steps + 1):
-        param_val = param_min + (i * step_size)
-        curr_params = copy_and_set(base_assumptions, parameter_name, param_val)
+    def eval_outcome(val: float) -> float:
+        curr_params = copy_and_set(base_assumptions, parameter_name, val)
         primary_run = simulate(primary_strategy, "flip_search", curr_params, company=company)
-        primary_metric = primary_run.outputs["net_contribution_12"]
+        return primary_run.outputs["net_contribution_12"]
 
-        diff = primary_metric - competitor_metric
-        if previous_diff is not None:
-            if (previous_diff < 0 and diff >= 0) or (previous_diff >= 0 and diff < 0):
-                flip_threshold = round(param_val, 4)
-                break
-        previous_diff = diff
+    val_low = eval_outcome(param_min)
+    val_high = eval_outcome(param_max)
 
-    if flip_threshold is None:
-        flip_threshold = round(param_min + (param_max - param_min) / 2.0, 4)
+    # If both bounds have the same sign, no flip point exists in range
+    if (val_low > 0 and val_high > 0) or (val_low < 0 and val_high < 0) or (val_low == 0 and val_high == 0):
+        superior = val_low > 0
+        statement = (
+            f"No flip point within tested range [{param_min}, {param_max}]. "
+            f"Strategy {primary_strategy} remains {'superior' if superior else 'inferior'} "
+            f"across the entire tested interval."
+        )
+        return {
+            "exists": False,
+            "strategy": primary_strategy,
+            "primary_strategy": primary_strategy,
+            "competing_strategy": competing_strategy,
+            "parameter": parameter_name,
+            "parameter_name": parameter_name,
+            "tested_range": [param_min, param_max],
+            "outcome_at_low": round(val_low, 2),
+            "outcome_at_high": round(val_high, 2),
+            "statement": statement,
+            "flip_value": None,
+            "threshold": None,
+            "threshold_display": "No flip point in range",
+        }
 
-    pct_str = f"{flip_threshold * 100:.2f}%"
+    # If bounds have opposite signs, run bisection to tolerance 1e-4
+    lo = param_min
+    hi = param_max
+    f_lo = val_low
+    f_hi = val_high
+
+    mid = (lo + hi) / 2.0
+    f_mid = eval_outcome(mid)
+
+    for _ in range(30):
+        mid = (lo + hi) / 2.0
+        f_mid = eval_outcome(mid)
+        if abs(f_mid) < 1.0 or (hi - lo) < 1e-5:
+            break
+        if (f_lo > 0 and f_mid > 0) or (f_lo < 0 and f_mid < 0):
+            lo = mid
+            f_lo = f_mid
+        else:
+            hi = mid
+            f_hi = f_mid
+
+    root = mid
+    val_root = f_mid
+    flip_value = round(root, 4)
+    pct_str = f"{root * 100:.2f}%" if root <= 1.0 else f"{root:,.2f}"
     statement = (
-        f"{primary_strategy} generates superior 12-month net contribution over {competing_strategy} "
-        f"only if {parameter_name.replace('_', ' ')} remains above {pct_str}."
+        f"Strategy {primary_strategy} net contribution flips sign relative to {competing_strategy} at "
+        f"{parameter_name} = {root:.4f} ({pct_str}) (baseline: {base_val:.4f})."
     )
 
     return {
+        "exists": True,
+        "strategy": primary_strategy,
         "primary_strategy": primary_strategy,
         "competing_strategy": competing_strategy,
+        "parameter": parameter_name,
         "parameter_name": parameter_name,
-        "threshold": flip_threshold,
-        "threshold_display": pct_str,
+        "tested_range": [param_min, param_max],
+        "flip_value": flip_value,
+        "outcome_at_flip": round(val_root, 2),
         "statement": statement,
+        "threshold": flip_value,
+        "threshold_display": pct_str,
     }
 
 
