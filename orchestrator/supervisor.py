@@ -16,6 +16,9 @@ from conflict.resolver import resolve_conflicts_with_simulation
 from orchestrator.checkpoint import CheckpointStore
 from orchestrator.recovery import RecoveryPolicy
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
+from state.company import load_company_snapshot
+from verification.skeptic_audit import run_skeptic_audit
+from verification.verifier import verify_workflow
 from orchestrator.dag import TaskDAG
 from orchestrator.decomposer import decompose_decision
 from state.event_bus import event_bus as default_event_bus
@@ -304,12 +307,25 @@ class Supervisor:
             return {"status": "simulations_completed", "total_runs": len(state.simulation_runs)}
 
         elif "verification" in task.id:
-            await self.bus.emit(
-                event_type="verification_passed",
-                agent="Supervisor",
-                payload={"task_id": task.id, "checks_passed": 5},
-            )
-            return {"status": "verification_passed"}
+            company = load_company_snapshot()
+            all_passed, results = verify_workflow(state.assumptions, state.simulation_runs, company)
+            state.verification_results = results
+            passed_count = sum(1 for r in results if r.status == "passed")
+
+            if all_passed:
+                await self.bus.emit(
+                    event_type="verification_passed",
+                    agent="Supervisor",
+                    payload={"task_id": task.id, "checks_passed": passed_count, "total_checks": len(results)},
+                )
+                return {"status": "verification_passed", "results": [r.model_dump() for r in results]}
+            else:
+                await self.bus.emit(
+                    event_type="verification_failed",
+                    agent="Supervisor",
+                    payload={"task_id": task.id, "failures": [r.detail for r in results if r.status == "failed"]},
+                )
+                return {"status": "verification_failed", "results": [r.model_dump() for r in results]}
 
         elif "report" in task.id:
             await self.bus.emit(

@@ -24,7 +24,7 @@ def get_financial_summary() -> Dict[str, Any]:
     }
 
 
-def calculate_runway_impact(additional_monthly_burn: float) -> Dict[str, Any]:
+def calculate_runway_impact(additional_monthly_burn: float = 20000.0) -> Dict[str, Any]:
     """CFO Tool: Deterministically compute runway reduction from added burn."""
     snapshot = load_company_snapshot()
     new_burn = snapshot.monthly_burn + additional_monthly_burn
