@@ -436,6 +436,29 @@ class Supervisor:
             return {"status": "skeptic_review_completed", "challenges_count": len(challenges)}
 
         elif kind == "simulation" or "simulation" in task.id:
+            # Handle pricing decision simulation
+            if state.decision and state.decision.type == "price_change":
+                from simulation.price_model import (
+                    PRICE_STRAT_A,
+                    PRICE_STRAT_B,
+                    PRICE_STRAT_C,
+                    simulate_price_change,
+                )
+
+                price_strategies = [PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C]
+                core_scenarios = ["conservative", "expected", "optimistic"]
+                for strat in price_strategies:
+                    for scen in core_scenarios:
+                        params = build_scenario_params(state.assumptions, scen)
+                        run = simulate_price_change(strat, scen, params, company=load_company_snapshot(), seed=42)
+                        state.simulation_runs.append(run)
+                        await self.bus.emit(
+                            event_type="simulation_run",
+                            agent="Supervisor",
+                            payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
+                        )
+                return {"status": "pricing_simulations_completed", "runs_count": len(state.simulation_runs)}
+
             # 1. Resolve conflicts via simulation
             resolved_conflicts, conflict_sim_runs = resolve_conflicts_with_simulation(state.conflicts, state.findings)
             state.conflicts = resolved_conflicts

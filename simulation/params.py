@@ -44,6 +44,34 @@ SIM_PARAMS: Dict[str, Dict[str, Any]] = {
         "default": 0.05,
         "description": "Average support ticket volume submitted per active free user per month.",
     },
+    "price_elasticity_starter": {
+        "unit": "ratio",
+        "favorable_direction": "lower",
+        "bounds": (0.05, 3.0),
+        "default": 0.65,
+        "description": "Price elasticity of demand for Starter plan subscribers.",
+    },
+    "price_elasticity_growth": {
+        "unit": "ratio",
+        "favorable_direction": "lower",
+        "bounds": (0.05, 2.5),
+        "default": 0.45,
+        "description": "Price elasticity of demand for Growth plan subscribers.",
+    },
+    "expansion_revenue_rate": {
+        "unit": "ratio",
+        "favorable_direction": "higher",
+        "bounds": (0.005, 0.40),
+        "default": 0.08,
+        "description": "Monthly expansion and upsell revenue rate from existing paid accounts.",
+    },
+    "contraction_risk_rate": {
+        "unit": "ratio",
+        "favorable_direction": "lower",
+        "bounds": (0.001, 0.25),
+        "default": 0.04,
+        "description": "Monthly contraction risk or downgrade rate triggered by price increases.",
+    },
 }
 
 

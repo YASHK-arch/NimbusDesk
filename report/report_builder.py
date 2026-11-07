@@ -78,6 +78,13 @@ def build_consolidated_report(
     }
 
     # 3. Strategy Comparison & Scenarios Table
+    is_price_change = state.decision and state.decision.type == "price_change"
+    if is_price_change:
+        from simulation.price_model import PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C
+        target_strategies = [PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C]
+    else:
+        target_strategies = [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+
     strategy_runs: Dict[str, Dict[str, Any]] = {}
     for r in state.simulation_runs:
         strat = r.strategy
@@ -85,7 +92,7 @@ def build_consolidated_report(
         strategy_runs.setdefault(strat, {})[scen] = r.outputs
 
     scenario_table = []
-    for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]:
+    for strat in target_strategies:
         strat_scenarios = strategy_runs.get(strat, {})
         expected = strat_scenarios.get("expected", {})
         conservative = strat_scenarios.get("conservative", {})
@@ -136,7 +143,16 @@ def build_consolidated_report(
 
     # Determine dynamic recommendation and headline thesis
     flip_display = flip_point_data.get("threshold_display", "the modeled threshold")
-    if ranked and ranked[0].feasible:
+    if is_price_change and ranked and ranked[0].feasible:
+        top_strat = ranked[0]
+        primary_strategy = top_strat.strategy
+        recommendation = f"Adopt {primary_strategy} based on Net Retention and Expansion Profile"
+        headline_thesis = (
+            f"Adopting {primary_strategy} projects Month 12 MRR of ${top_strat.mrr_month_12:,.0f} "
+            f"(${top_strat.mrr_month_12 * 12:,.0f} ARR) with {top_strat.runway_months_12:.1f} months runway and "
+            f"${top_strat.net_contribution_12:,.0f} net contribution, maintaining strong retention and gross margins."
+        )
+    elif ranked and ranked[0].feasible:
         top_strat = ranked[0]
         primary_strategy = top_strat.strategy
         recommendation = f"Proceed with {primary_strategy} under Stated Guardrails"

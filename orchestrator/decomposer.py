@@ -106,27 +106,35 @@ def decompose_decision(decision: Decision) -> TaskDAG:
         dag.add_task(growth_task)
         dag.add_task(customer_task)
 
-        sim_task = Task(
-            id="task_pricing_simulation",
+        discussion_task = Task(
+            id="task_agent_discussion",
             owner_agent="Supervisor",
-            kind="simulation",
+            kind="agent_discussion",
             depends_on=[cfo_task.id, growth_task.id, customer_task.id],
         )
-        dag.add_task(sim_task)
+        dag.add_task(discussion_task)
 
         skeptic_task = Task(
             id="task_skeptic_price_audit",
             owner_agent="Skeptic",
             kind="skeptic_review",
-            depends_on=[sim_task.id],
+            depends_on=[discussion_task.id],
         )
         dag.add_task(skeptic_task)
+
+        sim_task = Task(
+            id="task_pricing_simulation",
+            owner_agent="Supervisor",
+            kind="simulation",
+            depends_on=[skeptic_task.id],
+        )
+        dag.add_task(sim_task)
 
         draft_task = Task(
             id="task_report_draft",
             owner_agent="Supervisor",
             kind="report_draft",
-            depends_on=[skeptic_task.id],
+            depends_on=[sim_task.id],
         )
         dag.add_task(draft_task)
 
