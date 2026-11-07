@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from report.decision_logic import compute_confidence, extract_min_runway_constraint, rank_strategies
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C
 from simulation.sensitivity import compute_tornado_sensitivity, find_flip_point
 from state.company import load_company_snapshot
@@ -20,15 +21,34 @@ def build_consolidated_report(
     state: WorkflowState,
     company: Optional[CompanySnapshot] = None,
 ) -> Dict[str, Any]:
-    """Assemble the 10-section decision report from workflow state."""
+    """Assemble the 10-section decision report dynamically from workflow state and simulation runs."""
     if company is None:
         company = load_company_snapshot()
 
-    # 1. Executive Summary & Recommendation
-    # Determine recommendation based on simulation outcomes
-    primary_strategy = STRATEGY_B
-    recommendation = "Proceed with Strategy B (Usage Caps) as a Controlled 90-Day Experiment"
-    confidence = "Medium"
+    # 1. Evaluate minimum runway constraint and rank strategies
+    min_runway = extract_min_runway_constraint(
+        constraints=state.decision.constraints if state.decision else None,
+        assumptions=state.assumptions,
+        default_min_runway=10.0,
+    )
+    ranked = rank_strategies(state.simulation_runs, min_runway=min_runway)
+
+    # Detect degraded agents and unresolved conflicts for honest confidence scoring
+    degraded_agents = [
+        f.agent for f in state.findings.values()
+        if getattr(f, "degraded", False) or "degraded" in f.claim.lower()
+    ]
+    unresolved_conflicts = [c for c in state.conflicts if not c.resolved]
+
+    mc_summaries = getattr(state, "mc_summaries", None)
+    confidence_data = compute_confidence(
+        ranked=ranked,
+        mc_summaries=mc_summaries,
+        assumptions=state.assumptions,
+        degraded_agents=degraded_agents,
+        unresolved_conflicts=unresolved_conflicts,
+    )
+    confidence_level = confidence_data["level"]
 
     # 2. Company Baseline Snapshot
     company_position = {
@@ -46,14 +66,12 @@ def build_consolidated_report(
     }
 
     # 3. Strategy Comparison & Scenarios Table
-    # Filter simulation runs
     strategy_runs: Dict[str, Dict[str, Any]] = {}
     for r in state.simulation_runs:
         strat = r.strategy
         scen = r.scenario
         strategy_runs.setdefault(strat, {})[scen] = r.outputs
 
-    # Build scenario comparison grid
     scenario_table = []
     for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]:
         strat_scenarios = strategy_runs.get(strat, {})
@@ -87,13 +105,44 @@ def build_consolidated_report(
         for c in state.conflicts
     ]
 
+    # Determine primary strategy and competitor for flip point
+    top_strat_candidate = ranked[0].strategy if ranked else STRATEGY_B
+    competitor_candidate = STRATEGY_C if top_strat_candidate != STRATEGY_C else STRATEGY_B
+
     # 5. Sensitivity Tornado & Flip-Points
-    tornado_data = compute_tornado_sensitivity(STRATEGY_B, state.assumptions, company=company)
+    tornado_data = compute_tornado_sensitivity(top_strat_candidate, state.assumptions, company=company)
     flip_point_data = find_flip_point(
-        primary_strategy=STRATEGY_B,
-        competing_strategy=STRATEGY_C,
+        primary_strategy=top_strat_candidate,
+        competing_strategy=competitor_candidate,
         company=company,
     )
+
+    # Determine dynamic recommendation and headline thesis
+    flip_display = flip_point_data.get("threshold_display", "the modeled threshold")
+    if ranked and ranked[0].feasible:
+        top_strat = ranked[0]
+        primary_strategy = top_strat.strategy
+        recommendation = f"Proceed with {primary_strategy} under Stated Guardrails"
+        headline_thesis = (
+            f"Launching {primary_strategy} delivers ${top_strat.mrr_month_12:,.0f} MRR with "
+            f"{top_strat.runway_months_12:.1f} months runway and ${top_strat.net_contribution_12:,.0f} "
+            f"net contribution at Month 12, satisfying the {min_runway:.1f}-month runway constraint. "
+            f"The recommendation holds as long as conversion remains above {flip_display}."
+        )
+    elif ranked:
+        least_bad = ranked[0]
+        primary_strategy = least_bad.strategy
+        recommendation = f"Do not proceed with any free-plan strategy under current constraints; {least_bad.strategy} is least detrimental but violates the {min_runway:.1f}-month runway floor"
+        headline_thesis = (
+            f"Under current capital constraints (minimum runway >= {min_runway:.1f} months), "
+            f"all evaluated free-plan strategies result in unacceptable runway depletion. "
+            f"The least-negative strategy is {least_bad.strategy} with projected runway of "
+            f"{least_bad.runway_months_12:.1f} months and net contribution of ${least_bad.net_contribution_12:,.0f}."
+        )
+    else:
+        primary_strategy = STRATEGY_C
+        recommendation = "Do not proceed: insufficient simulation data"
+        headline_thesis = "Unable to verify financial feasibility due to missing simulation results."
 
     # 6. Assumption Ledger
     ledger = [
@@ -112,22 +161,26 @@ def build_consolidated_report(
         for asm in state.assumptions
     ]
 
-    # 7. Risks and Uncertainties
+    # 7. Risks and Uncertainties (Templated from computed metrics)
+    top_runway_disp = f"{ranked[0].runway_months_12:.1f}" if ranked else f"{company.runway_months:.1f}"
     risks = [
         {
             "category": "Runway Compression Risk",
-            "description": f"If free-to-paid conversion falls below {flip_point_data['threshold_display']}, cumulative cash burn increases, eroding the {company.runway_months:.1f}-month runway floor.",
-            "mitigation": "Impose strict 90-day cohort evaluation and hard cutoff if trial activation stays under 8%.",
+            "description": (
+                f"If conversion falls below {flip_display}, cash burn accelerates and "
+                f"erodes projected runway from {top_runway_disp} months toward the {min_runway:.1f}-month floor."
+            ),
+            "mitigation": f"Establish strict monthly cohort milestones and abort if 60-day conversion remains below {flip_display}.",
         },
         {
             "category": "Starter Plan Cannibalization",
-            "description": "Risk that existing $49/mo Starter tier customers downgrade to Free tier.",
-            "mitigation": "Gate free tier to 14-day history and 100 tickets/month; Starter maintains unlimited history and live chat.",
+            "description": "Risk that existing paying customers downgrade to the unmetered free tier.",
+            "mitigation": f"Enforce usage caps and limit support SLAs so paid tiers preserve clear enterprise value.",
         },
         {
             "category": "Support Saturation",
-            "description": "4-person customer support team risks queue degradation if free users submit tickets.",
-            "mitigation": "Strict community-only, self-serve AI bot support for free accounts; zero human SLA.",
+            "description": f"Customer support team ({company.support['headcount']} reps) risks queue saturation if unmetered free users submit tickets.",
+            "mitigation": "Enforce community-only deflection and automated triage for non-paying users.",
         },
     ]
 
@@ -143,14 +196,14 @@ def build_consolidated_report(
 
     # 9. Suggested Execution Plan & Key Metrics to Monitor
     execution_plan = {
-        "phase_1_rollout": "30-day private beta capped at 1,000 signups with strict usage caps (Strategy B).",
-        "phase_2_evaluation": "Audit free-to-paid upgrade velocity and marginal AWS database connection headroom at Day 60.",
-        "phase_3_decision_gate": "Expand public rollout if conversion >= 1.8%; abort and roll back if cannibalization > 8%.",
+        "phase_1_rollout": f"Private beta rollout under {primary_strategy} with cohort tracking.",
+        "phase_2_evaluation": "Audit conversion velocity and AWS infrastructure connection pool utilization across active cohorts.",
+        "phase_3_decision_gate": f"Expand public rollout only if measured conversion exceeds {flip_display}; otherwise trigger rollback.",
         "metrics_to_monitor": [
-            "Weekly Free-to-Paid Conversion Rate (Threshold: >= 1.85%)",
-            "Marginal Database Connection Pool Utilization (Threshold: <= 75%)",
-            "Support Tickets Per 1,000 Free Users (Threshold: <= 50 tickets/mo)",
-            "Monthly Starter Plan Net Downgrades (Threshold: <= 5 accounts/mo)",
+            f"Free-to-Paid Conversion Rate (Threshold: >= {flip_display})",
+            f"Runway Floor Maintenance (Threshold: >= {min_runway:.1f} months)",
+            "Marginal Infrastructure Connection Headroom",
+            "Monthly Starter Plan Net Downgrades",
         ],
     }
 
@@ -171,7 +224,9 @@ def build_consolidated_report(
         "question": state.decision.question,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "recommendation": recommendation,
-        "confidence": confidence,
+        "confidence": confidence_level,
+        "confidence_score": confidence_data["score"],
+        "confidence_reasons": confidence_data["reasons"],
         "disclaimer": (
             "SIMULATION DISCLAIMER: All outputs in this report are generated by deterministic multi-agent simulations "
             "based on explicitly stated parameter ranges. They do not constitute guaranteed financial outcomes. "
@@ -181,13 +236,11 @@ def build_consolidated_report(
         "sections": {
             "executive_summary": {
                 "recommendation": recommendation,
-                "confidence": confidence,
+                "confidence": confidence_level,
+                "confidence_score": confidence_data["score"],
+                "confidence_reasons": confidence_data["reasons"],
                 "primary_strategy": primary_strategy,
-                "headline_thesis": (
-                    "Launching Strategy B (Usage Caps) provides the optimal risk-adjusted path. "
-                    "It expands top-of-funnel capture by 3,200 users/mo while preserving runway above 10.8 months "
-                    f"and generating superior net contribution as long as conversion exceeds {flip_point_data['threshold_display']}."
-                ),
+                "headline_thesis": headline_thesis,
             },
             "company_position": company_position,
             "scenario_table": scenario_table,
@@ -205,16 +258,32 @@ def build_consolidated_report(
     return report
 
 
-def render_report_markdown(report: Dict[str, Any]) -> str:
+def render_report_markdown(report: Dict[str, Any], state: Optional[WorkflowState] = None) -> str:
     """Render the structured report dictionary into an executive GitHub Flavored Markdown document."""
     sec = report["sections"]
     exec_sum = sec["executive_summary"]
     comp = sec["company_position"]
     flip = sec["flip_point"]
 
+    # Determine status dynamically from verification results and workflow state
+    verif_items = sec.get("verification_summary", [])
+    has_failed_check = any(v.get("status") == "failed" for v in verif_items)
+    is_degraded = any("degraded" in r.lower() for r in exec_sum.get("confidence_reasons", []))
+
+    if has_failed_check:
+        status_label = "Verification Failed"
+    elif is_degraded:
+        status_label = "Degraded Mode"
+    elif verif_items and all(v.get("status") == "passed" for v in verif_items):
+        status_label = "Verified"
+    elif state and state.status == "completed":
+        status_label = "Verified"
+    else:
+        status_label = "Verified" if not has_failed_check else "Verification Failed"
+
     md = [
         f"# VentureTwin Decision Stress-Test Report: {report['question']}",
-        f"**Decision ID:** `{report['decision_id']}` | **Status:** `Verified` | **Badge:** `[SYNTHETIC DATA: NimbusDesk]`",
+        f"**Decision ID:** `{report['decision_id']}` | **Status:** `{status_label}` | **Badge:** `[SYNTHETIC DATA: NimbusDesk]`",
         f"**Generated:** {report['generated_at']}",
         "",
         "> [!IMPORTANT]",
@@ -241,9 +310,12 @@ def render_report_markdown(report: Dict[str, Any]) -> str:
 
     for row in sec["scenario_table"]:
         md.append(
-            f"| **{row['strategy']}** | ${row['mrr_month_12_conservative']:,.0f} | "
-            f"${row['mrr_month_12_expected']:,.0f} | ${row['mrr_month_12_optimistic']:,.0f} | "
-            f"{row['runway_months_12_expected']:.1f}mo | {row['gross_margin_12_expected']:.1f}% | "
+            f"| {row['strategy']} | "
+            f"${row['mrr_month_12_conservative']:,.0f} | "
+            f"${row['mrr_month_12_expected']:,.0f} | "
+            f"${row['mrr_month_12_optimistic']:,.0f} | "
+            f"{row['runway_months_12_expected']:.1f} mo | "
+            f"{row['gross_margin_12_expected']*100:.1f}% | "
             f"${row['net_contribution_12']:,.0f} |"
         )
 
@@ -253,32 +325,31 @@ def render_report_markdown(report: Dict[str, Any]) -> str:
         "",
         "## 3. Disagreements & Simulation-Based Resolutions",
     ])
-
-    for c in sec["conflicts"]:
-        md.extend([
-            f"### Conflict `{c['id']}`: {', '.join(c['agents'])}",
-            f"- **Disputed Item:** {c['disputed_item']}",
-            f"- **Simulation Evidence:** `{', '.join(c['simulation_ids'])}`",
-            f"- **Resolution:** {c['resolution']}",
-            "",
-        ])
+    if sec["conflicts"]:
+        for c in sec["conflicts"]:
+            status_tag = "RESOLVED" if c["resolved"] else "UNRESOLVED"
+            md.append(f"### Conflict: {c['disputed_item']} `[{status_tag}]`")
+            md.append(f"- **Contending Agents:** {', '.join(c['agents'])}")
+            md.append(f"- **Resolution Evidence:** {c['resolution']}")
+            if c["simulation_ids"]:
+                md.append(f"- **Associated Simulation Runs:** {', '.join(c['simulation_ids'])}")
+            md.append("")
+    else:
+        md.append("No active agent disagreements detected.\n")
 
     md.extend([
         "---",
         "",
         "## 4. Sensitivity Analysis (Tornado) & Flip-Point",
-        f"> [!TIP]",
-        f"> **Critical Flip-Point:** {flip['statement']}",
+        f"**Decision Flip-Point Finding:** {flip['statement']}",
         "",
-        "### Top Outcome Sensitivity Drivers:",
-        "| Rank | Assumption | Provenance | Range (Low -> High) | Swing on 12mo Net Contribution |",
-        "|---|---|---|---|---|",
+        "| Rank | Parameter | Base | Low Swung Outcome | High Swung Outcome | Net Impact Swing |",
+        "|---|---|---|---|---|---|",
     ])
-
-    for i, t in enumerate(sec["sensitivity_tornado"][:5], 1):
+    for idx, t in enumerate(sec["sensitivity_tornado"][:5], 1):
         md.append(
-            f"| {i} | **{t['assumption_name']}** | `{t['provenance']}` | "
-            f"{t['low_param']} - {t['high_param']} {t['unit']} | **${t['swing']:,.0f}** |"
+            f"| {idx} | `{t['assumption_name']}` | {t['base_param']} {t['unit']} | "
+            f"${t['low_outcome']:,.0f} | ${t['high_outcome']:,.0f} | **${t['swing']:,.0f}** |"
         )
 
     md.extend([
@@ -286,50 +357,44 @@ def render_report_markdown(report: Dict[str, Any]) -> str:
         "---",
         "",
         "## 5. Assumption Ledger & Provenance",
-        "| Assumption | Low | Base | High | Unit | Provenance | Source Ref | Conf | Challenged? |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Assumption | Range (Low / Base / High) | Unit | Provenance | Source | Skeptic Challenged |",
+        "|---|---|---|---|---|---|",
     ])
-
     for a in sec["assumption_ledger"]:
-        chal = "⚠️ Challenged" if a["challenged_by_skeptic"] else "Verified"
+        chal = "YES" if a["challenged_by_skeptic"] else "No"
         md.append(
-            f"| `{a['name']}` | {a['low']} | **{a['base']}** | {a['high']} | {a['unit']} | "
-            f"`{a['provenance']}` | {a['source_ref'] or 'N/A'} | {a['confidence']:.2f} | {chal} |"
+            f"| `{a['name']}` | {a['low']} / {a['base']} / {a['high']} | {a['unit']} | "
+            f"`{a['provenance']}` | {a['source_ref'] or 'N/A'} | {chal} |"
         )
 
     md.extend([
         "",
         "---",
         "",
-        "## 6. Verification Summary (Deterministic Checks)",
+        "## 6. Verification Summary",
     ])
-
     for v in sec["verification_summary"]:
-        badge = "PASS" if v["status"] == "passed" else "FAIL"
-        md.append(f"- **[{badge}] `{v['check_name']}`**: {v['detail']}")
+        icon = "[PASS]" if v["status"] == "passed" else "[FAIL]"
+        md.append(f"- **{v['check_name']}**: `{icon}` — {v['detail']}")
 
     md.extend([
         "",
         "---",
         "",
-        "## 7. Execution Plan & Guardrail Metrics",
-        f"- **Phase 1:** {sec['execution_plan']['phase_1_rollout']}",
-        f"- **Phase 2:** {sec['execution_plan']['phase_2_evaluation']}",
-        f"- **Phase 3:** {sec['execution_plan']['phase_3_decision_gate']}",
+        "## 7. Suggested Execution Plan & Guardrail Metrics",
+        f"- **Phase 1 (Rollout):** {sec['execution_plan']['phase_1_rollout']}",
+        f"- **Phase 2 (Evaluation):** {sec['execution_plan']['phase_2_evaluation']}",
+        f"- **Phase 3 (Decision Gate):** {sec['execution_plan']['phase_3_decision_gate']}",
         "",
         "**Key Metrics to Monitor:**",
     ])
-
     for m in sec["execution_plan"]["metrics_to_monitor"]:
         md.append(f"- {m}")
 
     md.extend([
         "",
         "---",
-        "",
-        "> [!NOTE]",
-        f"> **Disclaimer:** {report['disclaimer']}",
-        "",
+        f"> {report['disclaimer']}",
     ])
 
     return "\n".join(md)

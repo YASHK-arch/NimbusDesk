@@ -161,7 +161,10 @@ def simulate(
         total_monthly_expenses = base_opex + total_infra + total_support_cost
         net_burn = total_monthly_expenses - mrr
         cash -= net_burn
-        runway = (cash / net_burn) if net_burn > 0 else 999.0
+        if cash <= 0:
+            runway = 0.0
+        else:
+            runway = (cash / net_burn) if net_burn > 0 else 999.0
 
         gross_margin = (mrr - total_infra - total_support_cost) / mrr if mrr > 0 else 0.0
         monthly_net_contribution = mrr - total_monthly_expenses
