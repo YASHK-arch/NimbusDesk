@@ -5,23 +5,24 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=Python&logoColor=white)](https://www.python.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB.svg?style=flat&logo=React&logoColor=black)](https://react.dev/)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-E92063.svg?style=flat)](https://docs.pydantic.dev/)
-[![Tests](https://img.shields.io/badge/Tests-46%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-94%20Passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **Hackathon Problem Statement:** SwarmFlow: Multi-Agent Task Coordination Engine  
-> **Pitch Persona:** Finance, RevOps, or Strategy leads at Series A/B SaaS companies stress-testing pricing & packaging decisions before board meetings.  
-> **Pitch Line:** *"An orchestration engine where agents disagree, conflicts are resolved by simulation instead of voting, no number comes from an LLM, and the system survives an agent failure mid-run."*
+> **Target Persona:** Finance, RevOps, and Executive leadership at SaaS companies stress-testing pricing, packaging, and free-plan decisions prior to board commitment.  
+> **Core Tenet:** *"An orchestration engine where agents disagree, conflicts are resolved by simulation and evidence instead of voting, no final number comes from an LLM, and the system survives agent failures mid-run."*
 
 ---
 
-## 🌟 The 6 Core Differentiators
+## 🌟 The 7 Core Differentiators & Hard Rules
 
-1. **LLMs Never Output Numbers (Hard Rule R2):** Agents output qualitative claims and structured assumption ranges (`low`, `base`, `high`). All financial outcomes, MRR forecasts, runway, and churn figures are computed by a deterministic Python simulator (`NumPy`, `SciPy`, Monte Carlo).
-2. **Simulation-Based Conflict Resolution (Hard Rule R3):** When agents disagree (e.g., CFO warns of margin destruction vs. Growth projects acquisition scale), conflicts are detected and resolved by running both sides through the SaaS dynamics simulator—never by arbitrary voting or LLM preference.
-3. **Live Chaos & Fault Recovery (Hard Rule R1 & M7):** Mid-run chaos injection (timeout, unhandled exception, corrupt schema). The supervisor detects faults via heartbeats/validators, activates exponential backoff retry or reassigns to degraded fallback, resuming from SQLite checkpoints without losing completed tasks.
-4. **Assumption Ledger & Provenance (Hard Rule R4):** Every assumption traces back to a verified provenance tag (`verified_data`, `external_research`, `simulated_estimate`, `ai_assumption`).
-5. **Sensitivity Analysis & Flip-Points:** Tornado sensitivity rankings and plain-language threshold conditions (e.g. *"Strategy B beats Strategy C only if free-to-paid conversion stays above 1.85%"*).
-6. **Decision Memory & Calibration:** Decision records persist upon human approval, tracking predicted vs. actual outcomes on seeded calibration datasets.
+1. **LLMs Never Output Numbers (Hard Rule R2):** Agents output qualitative claims, structured assumptions with validated ranges (`low <= base <= high`), and explicit units. All financial outcomes, MRR forecasts, runway, and churn figures are computed strictly by deterministic Python simulators (`NumPy`, `SciPy`, Monte Carlo).
+2. **Simulation-Based Conflict Resolution (Hard Rule R3):** When agents disagree (e.g., CFO models margin erosion vs. Growth projects acquisition lift), conflicts are detected and settled by running both sides through dual simulation matrices—never by arbitrary voting or LLM preference. Resolution texts are generated purely from computed mathematical outputs.
+3. **Multi-Turn Agent Communication Protocol (R1 & M4):** Multi-agent structured dialogue featuring explicit message kinds (`proposal`, `critique`, `rebuttal`). The Skeptic agent critiques specialist bounds, and agents post rebuttals before conflict detection.
+4. **Order-Independent Reconciliation & Whitelisting:** Assumption reconciliation sorts inputs deterministically by `(agent, assumption_name)`, guaranteeing bit-for-bit identical results regardless of task completion order. Simulated parameters are strictly whitelisted against `SIM_PARAMS` to eliminate LLM hallucinations.
+5. **Live Chaos & Fault Recovery (Hard Rule R1 & M7):** Mid-run chaos injection (timeout, unhandled exception, bad output schema). The supervisor catches faults, applies exponential backoff retry, and reassigns persistent failures to `BackupAnalyst` while visibly displaying a degraded banner and capping confidence at Low. Core task failures produce workflow status `failed`.
+6. **Probabilistic Monte Carlo Distributions & Bisection Flip-Points:** 250-iteration Monte Carlo sampling with stored seeds and triangular distributions computes win probability (`p_best`) and safety feasibility (`p_feasible`). Flip-points use root bisection down to tolerance $< 1.0$, honestly reporting "Robust to Variation" when no flip point exists in the tested interval.
+7. **Six Deterministic Verification Checks (Hard Rule R4):** Automated verifier checks unit consistency, provenance snapshot tie-outs, ratio integrity, monotonic scenario ordering (`conservative <= expected <= optimistic`), non-empty section presence, and 100% report number traceability to simulator runs or snapshot data.
 
 ---
 
@@ -32,12 +33,12 @@ flowchart TD
     User([CEO / Strategy Lead]) -->|Inquiry: 'Should we launch a free plan?'| Parser[Decision Parser]
     Parser --> Decomposer[Supervisor DAG Decomposer]
 
-    subgraph Parallel Execution Layer [Milestones 1, 3, 4: Concurrent Agents]
-        Decomposer --> CFO[CFO Agent: Runway & Margin]
+    subgraph Parallel Analysis Layer [Milestones 1, 3, 4: Concurrent Specialists]
+        Decomposer --> CFO[CFO Agent: Runway & Unit Margin]
         Decomposer --> Growth[Growth Agent: Acquisition & CAC]
-        Decomposer --> CTO[CTO Agent: Cloud Infra & DB Limits]
-        Decomposer --> Customer[Customer Agent: Support Saturation]
-        Decomposer --> Product[Product Agent: Feature Gating]
+        Decomposer --> CTO[CTO Agent: Cloud Infra & Sharding Limits]
+        Decomposer --> Customer[Customer Agent: Support Ticket Load]
+        Decomposer --> Product[Product Agent: Feature Gating & Cannibalization]
     end
 
     CFO --> State[(Shared State & SQLite Checkpoints)]
@@ -46,12 +47,14 @@ flowchart TD
     Customer --> State
     Product --> State
 
-    State --> ConflictDetector[Conflict Detector: Range Divergence & Opposing Recs]
-    ConflictDetector --> Simulator[Deterministic SaaS Dynamics Simulator: NumPy / Monte Carlo]
+    State --> Discussion[Agent Discussion: Multi-Turn Critique & Rebuttal]
+    Discussion --> ConflictDetector[Conflict Detector: Range Divergence & Opposing Recs]
+    ConflictDetector --> Skeptic[Skeptic Agent: Epistemic Review & Range Challenges]
+    Skeptic --> Simulator[Deterministic SaaS Simulator & Monte Carlo Engine]
     
-    Simulator --> Skeptic[Skeptic Agent: Epistemic Audit & Confidence Downgrade]
-    Skeptic --> Verifier[Deterministic Verifier: Unit, Ratios, R4 Number Traceability]
-    Verifier --> Report[Consolidated 10-Section Decision Report]
+    Simulator --> DraftReport[Report Draft Builder]
+    DraftReport --> Verifier[Deterministic Verifier: 6 Rigorous Integrity Checks]
+    Verifier --> Report[Consolidated Decision Report & UI Dashboard]
     Report --> HumanApproval{Human Approval Gate: R5}
     HumanApproval -->|Approve| CalibrationStore[(Calibration History Memory)]
 ```
@@ -62,15 +65,15 @@ flowchart TD
 
 | Milestone | Implementation Details | Status |
 |---|---|---|
-| **1. Agent Role Design** | 6 specialized agents (CFO, Growth, CTO, Customer, Product, Skeptic) with distinct objectives, system prompts, deterministic company lookup tools, and Pydantic `Finding` schemas. Agent registry includes extensible placeholders (`Ops`, `Market`, `Risk`). | `[MVP-REAL]` |
-| **2. Task Decomposition Engine** | Natural language decision parser converting queries to `Decision` models; autonomous decomposition into 10-node task DAG with cycle detection and dependency validation. | `[MVP-REAL]` |
-| **3. Supervisor Architecture** | Asynchronous topological task dispatcher executing parallel root tasks concurrently (verified <0.05s spread) with dependency barriers. | `[MVP-REAL]` |
-| **4. Agent Communication Protocol** | Structured typed protocol where agents exchange validated `Finding` objects containing assumption bounds and evidence citations. Malformed outputs are rejected. | `[MVP-REAL]` |
-| **5. Shared State Management** | Unified `WorkflowState` persisted after each task via SQLite checkpoint store. Supports resuming interrupted runs without redoing completed tasks. | `[MVP-REAL]` |
-| **6. Conflict Detection & Resolution** | 4-part detector (opposing recommendations, non-overlapping assumption ranges, missing evidence, blocked dependencies); simulation-based resolver computing MRR/runway delta and flip-point threshold. | `[MVP-REAL]` |
-| **7. Failure Detection & Recovery** | Chaos injection hook (timeout, unhandled exception, schema corruption); supervisor catches faults, applies exponential backoff retry, and falls back to degraded mode while completing the run. | `[MVP-REAL]` |
-| **8. Workflow Verification** | Skeptic challenges aggressive assumptions and downgrades confidence; 5 deterministic checks verify units, ratios, and ensure 100% of report numbers trace to simulator runs (catching fabricated numbers). | `[MVP-REAL]` |
-| **9. Final Output Generation** | 10-section consolidated decision report (JSON + Markdown), Tornado sensitivity chart, scenario table (Strategies A, B, C), and interactive React frontend. | `[MVP-REAL]` |
+| **1. Agent Role Design** | 6 specialized agents (CFO, Growth, CTO, Customer, Product, Skeptic) plus `BackupAnalyst` with distinct system prompts, deterministic company lookup tools, and Pydantic `Finding` schemas. | `[MVP-REAL]` |
+| **2. Task Decomposition Engine** | Natural language decision parser supporting both `free_plan` and `price_change` decisions; autonomous decomposition into 12-task topological DAG with cycle detection. | `[MVP-REAL]` |
+| **3. Supervisor Architecture** | Asynchronous topological task dispatcher executing parallel root tasks concurrently (verified <0.05s spread) with dependency barriers and bounded retries. | `[MVP-REAL]` |
+| **4. Agent Communication Protocol** | Structured typed protocol with multi-turn deliberation (`Message` with `proposal`, `critique`, `rebuttal`) recorded in shared state. | `[MVP-REAL]` |
+| **5. Shared State Management** | Unified `WorkflowState` persisted after each task via SQLite checkpoint store. Supports resuming interrupted runs without redoing finished work. | `[MVP-REAL]` |
+| **6. Conflict Detection & Resolution** | 4-part detector (opposing recommendations, non-overlapping assumption ranges, missing evidence, blocked dependencies); simulation-based resolver computing MRR/runway delta, verdict evaluation (`decision_relevant` vs `immaterial`), and honest `unresolved_material` marking. | `[MVP-REAL]` |
+| **7. Failure Detection & Recovery** | Chaos injection hook (timeout, unhandled exception, bad output); supervisor catches faults, applies exponential backoff retry, and reassigns persistent failures to `BackupAnalyst` while visibly displaying a degraded banner and capping confidence at Low. Core failures yield workflow status `failed`. | `[MVP-REAL]` |
+| **8. Workflow Verification** | Skeptic challenges aggressive assumptions before simulation; 6 deterministic checks verify units, snapshot tie-outs, ratios, monotonic scenario ordering, required sections, and 100% draft number traceability with bounded loop-back on failure. | `[MVP-REAL]` |
+| **9. Final Output Generation** | 10-section consolidated decision report (JSON + Markdown), Outcome Ranges (Monte Carlo distributions), Tornado sensitivity ranking, Bisection Flip-point analysis, and interactive React frontend. | `[MVP-REAL]` |
 
 ---
 
@@ -78,16 +81,19 @@ flowchart TD
 
 - **Implemented Real (`[MVP-REAL]`):**
   - Full multi-agent orchestration, async DAG dispatcher, event bus streaming.
-  - Deterministic 24-month SaaS dynamics simulator (`NumPy`, Monte Carlo distributions, OAT Tornado sensitivity, Flip-point search).
+  - Deterministic 24-month SaaS dynamics simulator (`NumPy`, Monte Carlo distributions, OAT Tornado sensitivity, Bisection flip-point search).
+  - Price-change simulation model with tier-specific price elasticity mechanics.
+  - Multi-turn deliberation protocol with Skeptic critique and agent rebuttals.
   - Rule-based conflict detection and dual-simulation parametric resolution.
-  - Live failure injection (`POST /inject-failure`) and backoff / degraded recovery.
-  - Deterministic numerical verification checks catching fabricated numbers.
+  - Live failure injection (`POST /api/decisions/{id}/inject-failure`) and backoff / degraded recovery with `BackupAnalyst`.
+  - 6 deterministic numerical verification checks catching fabricated numbers.
   - Complete FastAPI REST API + SSE streaming.
   - Full React + TypeScript + Tailwind UI (Console, Report, Calibration, Company Graph).
 - **Seeded / Simulated (`[MVP-MOCK]`):**
   - Fictional B2B SaaS dataset ("NimbusDesk", Series A, $144k MRR, 12.6mo runway) in `data/synthetic_company.json`.
+  - Illustrative SaaS benchmarks in `data/benchmarks.json`.
   - 4 historical decisions with predicted vs. actual outcomes in `data/seeded_decisions.json`.
-  - LLM wrapper runs in deterministic offline mock mode by default for 100% repeatable, lightning-fast test execution.
+  - LLM layer operates in explicit modes (`mock`, `real`, `record`, `replay`). Defaults to deterministic mock mode for offline, lightning-fast execution.
 
 ---
 
@@ -106,17 +112,22 @@ cd Citadel-engine
 # 2. Setup virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
 
 # 3. Environment configuration
 cp .env.example .env
-# LLM_MOCK_MODE=true is enabled by default for fast, deterministic offline execution.
+# LLM_MODE=mock is enabled by default for fast, deterministic offline execution.
 ```
 
 ### 3. Run Test Suite
-Execute the comprehensive 46-test unit and integration test suite:
+Execute the comprehensive 94-test unit and integration test suite:
 ```bash
 .venv/bin/pytest tests/ -v
+```
+
+Execute **The One-Minute Acceptance Test Suite**:
+```bash
+.venv/bin/pytest tests/test_acceptance.py -v
 ```
 
 ### 4. Launch Application
@@ -136,7 +147,8 @@ Follow the 3-minute hackathon judge demo script in [docs/DEMO_SCRIPT.md](file://
 1. **Decision Console:** Inspect NimbusDesk metrics ($144k MRR, 12.6mo runway).
 2. **Stress-Test:** Click chip `"Should we launch a free plan?"`.
 3. **Watch DAG:** 5 specialist agents run concurrently.
-4. **Chaos Injection:** Click `💥 Crash` on CTO agent; watch supervisor detect fault, retry, and recover.
-5. **Conflict Resolution:** CFO vs Growth conflict resolved via dual simulation runs.
-6. **Report View:** Review Strategy B recommendation, Tornado chart, and Flip-point statement (`> 1.85% conversion`).
-7. **Human Approval:** Click `Approve Decision` to persist decision memory into the Calibration screen.
+4. **Deliberation:** Observe multi-turn critique and rebuttal between Skeptic, Growth, and CFO.
+5. **Chaos Injection:** Click `💥 Crash` on CTO agent; watch supervisor detect fault, retry, and recover.
+6. **Conflict Resolution:** CFO vs Growth conflict resolved via dual simulation runs.
+7. **Report View:** Review dynamic strategy recommendation, Outcome Ranges (Monte Carlo distributions), Tornado chart, and Bisection Flip-point.
+8. **Human Approval:** Click `Approve Decision` to persist decision memory into the Calibration screen.
