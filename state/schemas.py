@@ -79,6 +79,9 @@ class Conflict(BaseModel):
     resolution: Optional[str] = None
     simulation_ids: List[str] = Field(default_factory=list)
     resolved: bool = False
+    status: Literal["detected", "resolved_immaterial", "resolved_converged", "unresolved_material"] = "detected"
+    verdict: Optional[Literal["decision_relevant", "immaterial"]] = None
+    resolution_method: Optional[Literal["simulation_immaterial", "converged_after_rebuttal", "unresolved"]] = None
 
 
 class SimulationRun(BaseModel):

@@ -36,6 +36,7 @@
 | **Step 14** | Hardening, Demo Fallback Cache & Documentation | **COMPLETED** | All 46 tests passing, demo script in DEMO_SCRIPT.md, known-good run cached in data/known_good_run.json, comprehensive README |
 | **Fix 1** | Dynamic Strategy Ranking & Removal of Hardcoded Literals | **COMPLETED** | Pure functions in `report/decision_logic.py` (`rank_strategies`, `compute_confidence`). Dynamic recommendations based on runway floor; low cash triggers honest "Do not proceed"; all hardcoded numbers removed from report builder. (52/52 tests pass). |
 | **Fix 2** | Scenario Variation, Stress Matrix & Assumption Bounds Validation | **COMPLETED** | Single source of truth in `simulation/params.py` (`SIM_PARAMS`, `build_scenario_params`). Strict `conservative < expected < optimistic` ordering, 3 stress scenarios (`stress_infra_doubles`, `stress_conversion_collapse`, `stress_large_customer_churn`), and `Assumption` `low <= base <= high` validator. (57/57 tests pass). |
+| **Fix 3** | Conflict Resolution by Simulation, Ordinal Distance & Grouping | **COMPLETED** | Ordinal scale in `conflict/detector.py` (reject 0 to proceed 3, min distance 2), parameter-grouped assumption divergences. In `conflict/resolver.py`: 6-run dual strategy matrix, pure computed resolution text, verdict evaluation (`decision_relevant` vs `immaterial`), honest `unresolved_material` marking for persistent divergences. (61/61 tests pass). |
 
 ---
 
