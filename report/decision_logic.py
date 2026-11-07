@@ -173,7 +173,7 @@ def compute_confidence(
     score = max(0.0, min(1.0, round(score, 2)))
 
     # Force low if top is unfeasible or any degraded agent
-    if not top.feasible or (degraded_agents and len(degraded_agents) > 0 and score < 0.40):
+    if not top.feasible or (degraded_agents and len(degraded_agents) > 0):
         level = "Low"
     elif score >= 0.70:
         level = "High"

@@ -343,3 +343,133 @@ class SkepticAgent(BaseAgent):
             limitations=["Assumes competitor pricing structures remain static."],
             status="ok",
         )
+
+
+class BackupAnalyst(BaseAgent):
+    def __init__(self) -> None:
+        super().__init__(
+            name="BackupAnalyst",
+            role_title="Emergency Contingency Fallback Analyst",
+            objective="Provide conservative, high-uncertainty baseline assumptions when a primary specialist agent fails.",
+            system_prompt=(
+                "You are the Backup Analyst. You are invoked only when a primary domain specialist has failed all retries. "
+                "Provide conservative assumptions with high uncertainty bounds."
+            ),
+            allowed_tools=[get_financial_summary],
+        )
+
+    def generate_fallback_finding(
+        self,
+        task_id: str,
+        failed_agent_name: str,
+        disputed_area: str = "general_analysis",
+    ) -> Finding:
+        """Provide conservative fallback assumptions with high uncertainty bounds."""
+        assumptions: List[Assumption] = []
+        name_lower = failed_agent_name.lower()
+        if "growth" in name_lower:
+            assumptions.append(
+                Assumption(
+                    name="free_to_paid_conversion",
+                    low=0.008,
+                    base=0.012,
+                    high=0.022,
+                    unit="ratio",
+                    provenance="fallback_degraded",
+                    source_ref="fallback: conservative contingency estimate",
+                    confidence=0.40,
+                    proposed_by=self.name,
+                )
+            )
+            assumptions.append(
+                Assumption(
+                    name="monthly_free_signups",
+                    low=1000.0,
+                    base=2000.0,
+                    high=3500.0,
+                    unit="users",
+                    provenance="fallback_degraded",
+                    source_ref="fallback: conservative contingency estimate",
+                    confidence=0.40,
+                    proposed_by=self.name,
+                )
+            )
+        elif "cfo" in name_lower or "finance" in name_lower:
+            assumptions.append(
+                Assumption(
+                    name="starter_cannibalization_rate",
+                    low=0.10,
+                    base=0.18,
+                    high=0.30,
+                    unit="ratio",
+                    provenance="fallback_degraded",
+                    source_ref="fallback: conservative contingency estimate",
+                    confidence=0.40,
+                    proposed_by=self.name,
+                )
+            )
+        elif "cto" in name_lower or "tech" in name_lower or "infra" in name_lower:
+            assumptions.append(
+                Assumption(
+                    name="free_user_marginal_infra_cost",
+                    low=1.00,
+                    base=1.80,
+                    high=3.00,
+                    unit="USD",
+                    provenance="fallback_degraded",
+                    source_ref="fallback: conservative contingency estimate",
+                    confidence=0.40,
+                    proposed_by=self.name,
+                )
+            )
+        elif "customer" in name_lower or "support" in name_lower:
+            assumptions.append(
+                Assumption(
+                    name="free_user_monthly_tickets",
+                    low=0.04,
+                    base=0.08,
+                    high=0.15,
+                    unit="tickets/user/mo",
+                    provenance="fallback_degraded",
+                    source_ref="fallback: conservative contingency estimate",
+                    confidence=0.40,
+                    proposed_by=self.name,
+                )
+            )
+        else:
+            assumptions.append(
+                Assumption(
+                    name=f"fallback_{disputed_area}_rate",
+                    low=0.01,
+                    base=0.02,
+                    high=0.05,
+                    unit="ratio",
+                    provenance="fallback_degraded",
+                    source_ref="fallback: conservative contingency estimate",
+                    confidence=0.30,
+                    proposed_by=self.name,
+                )
+            )
+
+        return Finding(
+            agent=self.name,
+            task_id=task_id,
+            claim=f"Conservative fallback assumptions provided for {disputed_area} with high uncertainty bounds due to failed {failed_agent_name} analysis.",
+            recommendation="proceed_with_limits",
+            confidence=0.35,
+            assumptions=assumptions,
+            evidence=[
+                Evidence(
+                    source_type="contingency_fallback",
+                    source_ref="orchestrator/recovery.py#BackupAnalyst",
+                    snippet=f"Primary specialist {failed_agent_name} failed all retries; BackupAnalyst substituted with conservative bounds.",
+                )
+            ],
+            limitations=[f"Substituted for failed {failed_agent_name}."],
+            status="ok",
+            degraded=True,
+            degraded_reason=f"Substituted for failed {failed_agent_name}",
+        )
+
+    def _generate_specialist_mock(self, task_id: str) -> Finding:
+        return self.generate_fallback_finding(task_id, "Specialist")

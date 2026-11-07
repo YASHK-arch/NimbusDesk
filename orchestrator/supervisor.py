@@ -37,11 +37,39 @@ class Supervisor:
         self.checkpoints = checkpoint_store or CheckpointStore()
         self.recovery = recovery_policy or RecoveryPolicy()
 
+    def _get_failure_for_attempt(
+        self,
+        target_keys: List[str],
+        attempt: int,
+        injected_failures: Dict[str, Any],
+    ) -> Optional[str]:
+        """Check if an injected failure applies to this target on the given attempt number."""
+        for key in target_keys:
+            if not key or key not in injected_failures:
+                continue
+            inj = injected_failures[key]
+            if isinstance(inj, str):
+                if attempt == 1:
+                    return inj
+            elif isinstance(inj, dict):
+                f_type = inj.get("failure_type") or inj.get("mode", "exception")
+                persist = inj.get("persist", False)
+                fail_attempts = inj.get("fail_attempts", 1)
+                if persist or attempt <= fail_attempts:
+                    return f_type
+            else:
+                f_type = getattr(inj, "failure_type", getattr(inj, "mode", "exception"))
+                persist = getattr(inj, "persist", False)
+                fail_attempts = getattr(inj, "fail_attempts", 1)
+                if persist or attempt <= fail_attempts:
+                    return f_type
+        return None
+
     async def run_workflow(
         self,
         decision: Decision,
         dag: Optional[TaskDAG] = None,
-        injected_failures: Optional[Dict[str, str]] = None,
+        injected_failures: Optional[Dict[str, Any]] = None,
         resume_if_checkpoint_exists: bool = False,
     ) -> WorkflowState:
         """Execute or resume a multi-agent workflow DAG with task-level SQLite checkpointing."""
@@ -102,13 +130,12 @@ class Supervisor:
             for task in ready_tasks:
                 task.status = "running"
                 task_id = task.id
-                failure_mode = injected_failures.get(task.owner_agent) or injected_failures.get(task_id)
 
                 async_task = asyncio.create_task(
                     self._execute_single_task(
                         task=task,
                         state=state,
-                        failure_mode=failure_mode,
+                        injected_failures=injected_failures,
                     )
                 )
                 active_tasks[task_id] = async_task
@@ -148,9 +175,14 @@ class Supervisor:
                         task_obj.status = "failed"
                         task_obj.error_message = str(err)
                         state.tasks[tid] = task_obj
+                        state.status = "failed"
+                        state.decision.status = "failed"
                         # Persist failed checkpoint
                         self.checkpoints.save_checkpoint(state, tid)
-                        completed_ids.add(tid)
+                        for at in active_tasks.values():
+                            if not at.done():
+                                at.cancel()
+                        return state
 
             for fid in finished_ids:
                 del active_tasks[fid]
@@ -162,9 +194,10 @@ class Supervisor:
         self,
         task: Task,
         state: WorkflowState,
-        failure_mode: Optional[str] = None,
+        injected_failures: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """Execute an individual task, logging timestamps to prove concurrent parallelism."""
+        injected_failures = injected_failures or {}
         start_ts = time.time()
         start_iso = datetime.now(timezone.utc).isoformat()
 
@@ -175,14 +208,17 @@ class Supervisor:
         )
 
         try:
+            target_keys = [task.owner_agent, task.id]
+
             # Handle specialist agent analysis tasks
             if task.kind == "agent_analysis":
                 agent = self.registry.get_agent(task.owner_agent)
                 if agent:
                     finding: Optional[Finding] = None
                     task.attempts = 1
+                    fail_1 = self._get_failure_for_attempt(target_keys, 1, injected_failures)
                     try:
-                        finding = await agent.run(task=task, state=state.model_dump(), failure_mode=failure_mode)
+                        finding = await agent.run(task=task, state=state.model_dump(), failure_mode=fail_1)
                     except Exception as first_exc:
                         await self.bus.emit(
                             event_type="agent_failed",
@@ -194,28 +230,36 @@ class Supervisor:
                             agent="Supervisor",
                             payload={"task_id": task.id, "target_agent": task.owner_agent, "action": "retry_with_backoff"},
                         )
-                        task.attempts += 1
+                        task.attempts = 2
                         await self.recovery.apply_backoff(task.attempts)
 
-                        # Transient retry attempt without injected failure
+                        fail_2 = self._get_failure_for_attempt(target_keys, 2, injected_failures)
                         try:
-                            finding = await agent.run(task=task, state=state.model_dump(), failure_mode=None)
+                            finding = await agent.run(task=task, state=state.model_dump(), failure_mode=fail_2)
                             await self.bus.emit(
                                 event_type="recovery_done",
                                 agent="Supervisor",
                                 payload={"task_id": task.id, "recovered_via": "retry_success"},
                             )
                         except Exception as retry_exc:
-                            # Fallback to degraded recovery mode
-                            finding = self.recovery.create_degraded_fallback_finding(
-                                task=task,
-                                agent_name=task.owner_agent,
-                                error_msg=str(retry_exc),
-                            )
+                            # Fallback to BackupAnalyst
+                            backup_agent = self.registry.get_agent("backupanalyst")
+                            if backup_agent and hasattr(backup_agent, "generate_fallback_finding"):
+                                finding = backup_agent.generate_fallback_finding(
+                                    task_id=task.id,
+                                    failed_agent_name=task.owner_agent,
+                                    disputed_area=task.owner_agent.lower(),
+                                )
+                            else:
+                                finding = self.recovery.create_degraded_fallback_finding(
+                                    task=task,
+                                    agent_name=task.owner_agent,
+                                    error_msg=str(retry_exc),
+                                )
                             await self.bus.emit(
                                 event_type="recovery_done",
                                 agent="Supervisor",
-                                payload={"task_id": task.id, "recovered_via": "degraded_fallback"},
+                                payload={"task_id": task.id, "recovered_via": "degraded_fallback", "substitute": "BackupAnalyst"},
                             )
 
                     state.findings[agent.name] = finding
@@ -249,6 +293,15 @@ class Supervisor:
                         },
                     )
                     return finding
+
+            # Non-agent core task: check failure injection
+            fail_1 = self._get_failure_for_attempt(target_keys, 1, injected_failures)
+            if fail_1:
+                task.attempts = 2
+                await self.recovery.apply_backoff(2)
+                fail_2 = self._get_failure_for_attempt(target_keys, 2, injected_failures)
+                if fail_2:
+                    raise RuntimeError(f"Core task {task.id} failed persistently after retries (injected {fail_2})")
 
             # Handle supervisor internal tasks (conflict, skeptic_review, simulation, report_draft, verification, report_finalize)
             result = await self._handle_supervisor_task(task, state)

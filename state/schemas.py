@@ -13,7 +13,7 @@ class Assumption(BaseModel):
     base: float = Field(..., description="Expected / baseline estimate")
     high: float = Field(..., description="Optimistic bound")
     unit: str = Field(..., description="Unit of measurement, e.g. '%', 'USD/user', 'ratio'")
-    provenance: Literal["verified_data", "external_research", "simulated_estimate", "ai_assumption"] = Field(
+    provenance: Literal["verified_data", "external_research", "simulated_estimate", "ai_assumption", "fallback_degraded"] = Field(
         ..., description="Provenance tag tracing source category"
     )
     source_ref: Optional[str] = Field(None, description="Identifier of dataset, document, or calculation reference")
@@ -31,7 +31,7 @@ class Assumption(BaseModel):
 
 
 class Evidence(BaseModel):
-    source_type: Literal["company_data", "external", "calculation", "benchmark"]
+    source_type: Literal["company_data", "external", "calculation", "benchmark", "contingency_fallback"]
     source_ref: str
     snippet: str
 
@@ -46,6 +46,15 @@ class Finding(BaseModel):
     confidence: float = Field(0.5, ge=0.0, le=1.0)
     limitations: List[str] = Field(default_factory=list)
     status: Literal["ok", "failed", "needs_more_info"] = "ok"
+    degraded: bool = False
+    degraded_reason: Optional[str] = None
+
+
+class FailureInjection(BaseModel):
+    agent: str
+    failure_type: Literal["timeout", "exception", "corrupt_output", "bad_output"] = "exception"
+    persist: bool = False
+    fail_attempts: int = 1
 
 
 class Decision(BaseModel):

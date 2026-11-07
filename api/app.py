@@ -23,7 +23,7 @@ from orchestrator.supervisor import Supervisor
 from report.report_builder import render_report_markdown
 from state.company import load_company_snapshot, load_seeded_decisions
 from state.event_bus import event_bus
-from state.schemas import DecisionRecord, WorkflowEvent
+from state.schemas import DecisionRecord, FailureInjection, WorkflowEvent
 from state.shared_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,10 @@ class DecisionSubmitRequest(BaseModel):
 
 class InjectFailureRequest(BaseModel):
     agent: str = Field(..., json_schema_extra={"example": "CTO"})
-    mode: Literal["timeout", "exception", "bad_output"] = Field(..., json_schema_extra={"example": "exception"})
+    mode: Optional[Literal["timeout", "exception", "bad_output", "corrupt_output"]] = None
+    failure_type: Optional[Literal["timeout", "exception", "bad_output", "corrupt_output"]] = None
+    persist: bool = False
+    fail_attempts: int = 1
 
 
 class ApprovalRequest(BaseModel):
@@ -193,13 +196,23 @@ async def stream_events(id: str):
 
 @app.post("/api/decisions/{id}/inject-failure")
 async def inject_failure(id: str, req: InjectFailureRequest):
-    """Chaos hook: inject timeout, exception, or bad_output into an agent."""
-    _INJECTED_FAILURES.setdefault(id, {})[req.agent] = req.mode
+    """Chaos hook: inject timeout, exception, or bad_output into an agent or task."""
+    f_type = req.failure_type or req.mode or "exception"
+    inj = FailureInjection(
+        agent=req.agent,
+        failure_type=f_type,
+        persist=req.persist,
+        fail_attempts=req.fail_attempts,
+    )
+    _INJECTED_FAILURES.setdefault(id, {})[req.agent] = inj
     return {
         "status": "failure_injected",
         "decision_id": id,
         "agent": req.agent,
-        "mode": req.mode,
+        "mode": inj.failure_type,
+        "failure_type": inj.failure_type,
+        "persist": inj.persist,
+        "fail_attempts": inj.fail_attempts,
     }
 
 
@@ -207,7 +220,14 @@ async def inject_failure(id: str, req: InjectFailureRequest):
 async def get_decision_report(id: str, format: Optional[str] = "json"):
     """Fetch the consolidated 10-section decision report."""
     state = _WORKFLOW_STATES.get(id) or _checkpoint_store.load_latest_checkpoint(id)
-    if not state or not state.report:
+    if not state:
+        raise HTTPException(status_code=404, detail="Decision not found")
+    if state.status == "failed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workflow failed for decision {id}; no final report is available.",
+        )
+    if not state.report:
         raise HTTPException(status_code=404, detail="Report not ready or decision not found")
 
     if format == "markdown":

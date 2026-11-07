@@ -35,10 +35,20 @@ def build_consolidated_report(
     ranked = rank_strategies(state.simulation_runs, min_runway=min_runway)
 
     # Detect degraded agents and unresolved conflicts for honest confidence scoring
-    degraded_agents = [
-        f.agent for f in state.findings.values()
-        if getattr(f, "degraded", False) or "degraded" in f.claim.lower()
-    ]
+    degraded_agents = []
+    for f in state.findings.values():
+        if getattr(f, "degraded", False) or "degraded" in f.claim.lower():
+            if getattr(f, "degraded_reason", None) and "for failed " in f.degraded_reason:
+                degraded_agents.append(f.degraded_reason.split("for failed ")[-1].strip())
+            else:
+                degraded_agents.append(f.agent)
+
+    degraded_agent_banner = None
+    if degraded_agents:
+        degraded_agent_banner = (
+            f"WARNING: Analysis from {', '.join(degraded_agents)} failed; "
+            "conservative fallback assumptions were used. Recommendation confidence is capped at Low."
+        )
     unresolved_conflicts = [c for c in state.conflicts if not c.resolved]
 
     mc_summaries = getattr(state, "mc_summaries", None)
@@ -260,6 +270,7 @@ def build_consolidated_report(
             "All company metrics originate from the synthetic NimbusDesk dataset."
         ),
         "synthetic_badge": True,
+        "degraded_agent_banner": degraded_agent_banner,
         "sections": {
             "executive_summary": {
                 "recommendation": recommendation,
@@ -268,6 +279,7 @@ def build_consolidated_report(
                 "confidence_reasons": confidence_data["reasons"],
                 "primary_strategy": primary_strategy,
                 "headline_thesis": headline_thesis,
+                "degraded_agent_banner": degraded_agent_banner,
             },
             "company_position": company_position,
             "scenario_table": scenario_table,
@@ -314,6 +326,14 @@ def render_report_markdown(report: Dict[str, Any], state: Optional[WorkflowState
         f"**Decision ID:** `{report['decision_id']}` | **Status:** `{status_label}` | **Badge:** `[SYNTHETIC DATA: NimbusDesk]`",
         f"**Generated:** {report['generated_at']}",
         "",
+    ]
+    if report.get("degraded_agent_banner"):
+        md.extend([
+            "> [!WARNING]",
+            f"> **DEGRADED AGENT EXECUTION:** {report['degraded_agent_banner']}",
+            "",
+        ])
+    md.extend([
         "> [!IMPORTANT]",
         f"> **Recommendation:** {exec_sum['recommendation']}  ",
         f"> **Confidence Level:** {exec_sum['confidence']}  ",
@@ -334,7 +354,7 @@ def render_report_markdown(report: Dict[str, Any], state: Optional[WorkflowState
         "## 2. Strategy Scenario Comparison (12-Month Forecast)",
         "| Strategy | MRR (Conservative) | MRR (Expected) | MRR (Optimistic) | Runway (Mo) | Gross Margin | Net Contribution (12mo) |",
         "|---|---|---|---|---|---|---|",
-    ]
+    ])
 
     for row in sec["scenario_table"]:
         md.append(

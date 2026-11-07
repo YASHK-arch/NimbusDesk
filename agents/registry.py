@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from agents.base_agent import BaseAgent
 from agents.specialists import (
+    BackupAnalyst,
     CFOAgent,
     CTOAgent,
     CustomerAgent,
@@ -23,6 +24,8 @@ class AgentRegistry:
             "customer": CustomerAgent(),
             "product": ProductAgent(),
             "skeptic": SkepticAgent(),
+            "backupanalyst": BackupAnalyst(),
+            "backup_analyst": BackupAnalyst(),
         }
         self._placeholders: Dict[str, Dict[str, Any]] = {
             "ops": {
