@@ -1,0 +1,14 @@
+{
+  "decision_id": "dec-demo-fallback",
+  "question": "Should we launch a free plan?",
+  "status": "completed",
+  "recommendation": "Proceed with Strategy B (Usage Caps) as a Controlled 90-Day Experiment",
+  "confidence": "Medium",
+  "flip_point": {
+    "threshold_display": "1.85%",
+    "statement": "Strategy B (Usage Caps) generates superior 12-month net contribution over Strategy C (Funnel Optimization) only if free to paid conversion remains above 1.85%."
+  },
+  "conflicts_resolved": 1,
+  "simulations_executed": 11,
+  "synthetic_badge": true
+}
