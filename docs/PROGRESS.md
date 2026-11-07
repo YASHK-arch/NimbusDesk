@@ -27,7 +27,7 @@
 | **Step 5** | Communication Protocol & Shared State (SQLite Checkpoints) | **COMPLETED** | Typed state with Pydantic, SQLite task-level checkpoints, resume without redoing finished work, malformed outputs rejected |
 | **Step 6** | Deterministic SaaS Simulation Engine (Monte Carlo, Tornado, Flip-Points) | **COMPLETED** | 24-month SaaS dynamics, 3 strategies, reproducible seeds, Monte Carlo p10/p50/p90, tornado swings, flip-point search |
 | **Step 7** | Conflict Detection & Simulation-Based Resolution | **COMPLETED** | Rule-based detectors (opposing recs, non-overlapping bounds, missing evidence), CFO vs Growth conflict resolved via dual simulation delta & flip-point |
-| **Step 8** | Failure Injection & Recovery (Timeout, Exception, Corrupt Output) | PENDING | Inject failure mid-run, checkpoint recovery, run completes |
+| **Step 8** | Failure Injection & Recovery (Timeout, Exception, Corrupt Output) | **COMPLETED** | Fault detection, retry backoff, degraded fallback finding, POST /api/decisions/{id}/inject-failure endpoint |
 | **Step 9** | Skeptic & Deterministic Workflow Verification | PENDING | Corrupted numbers caught and routed back, verification summary |
 | **Step 10** | Consolidated Decision Report Builder (JSON + Markdown) | PENDING | 10 sections, all numbers traced to simulator or synthetic data |
 | **Step 11** | API Endpoints & SSE Streaming | PENDING | Full API flow works (submit, stream, report, approve, history) |

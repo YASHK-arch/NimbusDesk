@@ -74,10 +74,18 @@ async def test_invalid_agent_output_rejected():
 
         decision, _ = parse_decision_query("Should we launch a free plan?")
 
-        # Inject bad_output on CFO
+        # Subscribe to events to verify rejection is emitted
+        queue = bus.subscribe()
         injected = {"CFO": "bad_output"}
         state = await supervisor.run_workflow(decision=decision, injected_failures=injected)
 
-        # CFO task should have failed and been rejected
-        assert state.tasks["task_cfo_analysis"].status == "failed"
-        assert "CorruptedAgentOutput" in str(state.tasks["task_cfo_analysis"].error_message)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+
+        # Verify that an agent_failed event was emitted specifically for CFO with CorruptedAgentOutput
+        failed_ev = next((e for e in events if e.type == "agent_failed" and e.agent == "CFO"), None)
+        assert failed_ev is not None
+        assert "CorruptedAgentOutput" in str(failed_ev.payload.get("error"))
+        # Verify task was recovered to completed state
+        assert state.tasks["task_cfo_analysis"].attempts > 1

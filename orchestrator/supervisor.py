@@ -14,6 +14,7 @@ from agents.registry import registry as default_registry
 from conflict.detector import detect_conflicts
 from conflict.resolver import resolve_conflicts_with_simulation
 from orchestrator.checkpoint import CheckpointStore
+from orchestrator.recovery import RecoveryPolicy
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from orchestrator.dag import TaskDAG
 from orchestrator.decomposer import decompose_decision
@@ -25,10 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 class Supervisor:
-    def __init__(self, agent_registry=None, bus=None, checkpoint_store=None) -> None:
+    def __init__(self, agent_registry=None, bus=None, checkpoint_store=None, recovery_policy=None) -> None:
         self.registry = agent_registry or default_registry
         self.bus = bus or default_event_bus
         self.checkpoints = checkpoint_store or CheckpointStore()
+        self.recovery = recovery_policy or RecoveryPolicy()
 
     async def run_workflow(
         self,
@@ -171,7 +173,45 @@ class Supervisor:
             # Handle specialist agent execution
             agent = self.registry.get_agent(task.owner_agent)
             if agent:
-                finding = await agent.run(task=task, state=state.model_dump(), failure_mode=failure_mode)
+                finding: Optional[Finding] = None
+                task.attempts = 1
+                try:
+                    finding = await agent.run(task=task, state=state.model_dump(), failure_mode=failure_mode)
+                except Exception as first_exc:
+                    await self.bus.emit(
+                        event_type="agent_failed",
+                        agent=task.owner_agent,
+                        payload={"task_id": task.id, "attempt": task.attempts, "error": str(first_exc)},
+                    )
+                    await self.bus.emit(
+                        event_type="recovery_started",
+                        agent="Supervisor",
+                        payload={"task_id": task.id, "target_agent": task.owner_agent, "action": "retry_with_backoff"},
+                    )
+                    task.attempts += 1
+                    await self.recovery.apply_backoff(task.attempts)
+
+                    # Transient retry attempt without injected failure
+                    try:
+                        finding = await agent.run(task=task, state=state.model_dump(), failure_mode=None)
+                        await self.bus.emit(
+                            event_type="recovery_done",
+                            agent="Supervisor",
+                            payload={"task_id": task.id, "recovered_via": "retry_success"},
+                        )
+                    except Exception as retry_exc:
+                        # Fallback to degraded recovery mode
+                        finding = self.recovery.create_degraded_fallback_finding(
+                            task=task,
+                            agent_name=task.owner_agent,
+                            error_msg=str(retry_exc),
+                        )
+                        await self.bus.emit(
+                            event_type="recovery_done",
+                            agent="Supervisor",
+                            payload={"task_id": task.id, "recovered_via": "degraded_fallback"},
+                        )
+
                 state.findings[agent.name] = finding
 
                 # Collect proposed assumptions
