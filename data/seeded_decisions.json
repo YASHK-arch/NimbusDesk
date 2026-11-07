@@ -1,0 +1,94 @@
+[
+  {
+    "id": "dec-seed-001",
+    "question": "Should we raise the Pro plan price from $149/mo to $199/mo?",
+    "decision_date": "2025-06-15",
+    "status": "evaluated",
+    "chosen_strategy": "Increase Pro price to $199 with 3-month grandfathering for existing cohort",
+    "predicted_metrics": {
+      "mrr_delta_pct": 6.5,
+      "churn_increase_pct": 0.4,
+      "net_runway_impact_months": 2.1
+    },
+    "actual_metrics": {
+      "mrr_delta_pct": 3.2,
+      "churn_increase_pct": 0.9,
+      "net_runway_impact_months": 1.2
+    },
+    "error_analysis": {
+      "metric_evaluated": "mrr_delta_pct",
+      "absolute_error_pct": 3.3,
+      "most_wrong_assumption": "Pro tier price elasticity",
+      "lesson_learned": "Elasticity was under-estimated: 8% of grandfathered cohort churned at renewal."
+    }
+  },
+  {
+    "id": "dec-seed-002",
+    "question": "Should we hire 2 tier-2 support engineers to reduce enterprise ticket backlog?",
+    "decision_date": "2025-09-01",
+    "status": "evaluated",
+    "chosen_strategy": "Hire 2 senior support specialists and implement Zendesk priority routing",
+    "predicted_metrics": {
+      "ticket_resolution_time_hours": 3.5,
+      "enterprise_churn_delta_pct": -0.3,
+      "support_cost_monthly_delta": 14000.0
+    },
+    "actual_metrics": {
+      "ticket_resolution_time_hours": 4.8,
+      "enterprise_churn_delta_pct": -0.15,
+      "support_cost_monthly_delta": 14200.0
+    },
+    "error_analysis": {
+      "metric_evaluated": "ticket_resolution_time_hours",
+      "absolute_error_pct": 1.3,
+      "most_wrong_assumption": "Onboarding ramp velocity",
+      "lesson_learned": "New hires required 7 weeks ramp time instead of assumed 3 weeks."
+    }
+  },
+  {
+    "id": "dec-seed-003",
+    "question": "Should we expand Google Ads acquisition budget by 30%?",
+    "decision_date": "2025-11-10",
+    "status": "evaluated",
+    "chosen_strategy": "Scale Google Search PPC budget targeting high-intent ticketing keywords",
+    "predicted_metrics": {
+      "trial_signups_monthly_delta": 85,
+      "cac_delta_pct": 4.0,
+      "net_new_mrr_delta": 7500.0
+    },
+    "actual_metrics": {
+      "trial_signups_monthly_delta": 52,
+      "cac_delta_pct": 12.5,
+      "net_new_mrr_delta": 4800.0
+    },
+    "error_analysis": {
+      "metric_evaluated": "cac_delta_pct",
+      "absolute_error_pct": 8.5,
+      "most_wrong_assumption": "Marginal CPC saturation",
+      "lesson_learned": "Bidding wars on primary keywords raised marginal CPC by 22%."
+    }
+  },
+  {
+    "id": "dec-seed-004",
+    "question": "Should we offer a 20% annual billing discount for Starter and Pro plans?",
+    "decision_date": "2026-01-20",
+    "status": "evaluated",
+    "chosen_strategy": "Introduce 20% discount on upfront annual commit with in-app banner prompt",
+    "predicted_metrics": {
+      "annual_conversion_rate_pct": 18.0,
+      "upfront_cash_infusion": 185000.0,
+      "annual_churn_reduction_pct": 1.1
+    },
+    "actual_metrics": {
+      "annual_conversion_rate_pct": 21.4,
+      "upfront_cash_infusion": 210000.0,
+      "annual_churn_reduction_pct": 1.4
+    },
+    "error_analysis": {
+      "metric_evaluated": "upfront_cash_infusion",
+      "absolute_error_pct": 13.5,
+      "most_wrong_assumption": "Willingness to prepay",
+      "lesson_learned": "Customers responded strongly to cash savings; upfront cash exceeded forecast."
+    }
+  }
+]

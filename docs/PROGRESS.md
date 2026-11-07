@@ -20,7 +20,7 @@
 | Step | Milestone & Focus | Status | Evidence / Done When |
 |---|---|---|---|
 | **Step 0** | Project Skeleton, Environment, `llm_call()`, FastAPI | **COMPLETED** | Pytest passes (4/4), API starts, mock LLM returns validated Pydantic model |
-| **Step 1** | Schemas & Synthetic Data (`data/synthetic_company.json`, seeded decisions) | PENDING | Schemas validate, data loader snapshots NimbusDesk |
+| **Step 1** | Schemas & Synthetic Data (`data/synthetic_company.json`, seeded decisions) | **COMPLETED** | Schemas validate (9/9 tests pass), NimbusDesk loaded with 12.6mo runway & tension |
 | **Step 2** | Agent Base Class & Specialists (CFO, Growth, CTO, Customer, Skeptic, Registry) | PENDING | Distinct prompts, tools, structured findings with provenance |
 | **Step 3** | Task Decomposition Engine (NLP -> Decision -> Task DAG) | PENDING | Cycle detection, parallelizable tasks for free-plan question |
 | **Step 4** | Supervisor Architecture & Parallel Execution | PENDING | Concurrent execution with timestamps, dependencies respected |

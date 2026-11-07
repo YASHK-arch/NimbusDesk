@@ -1,0 +1,69 @@
+{
+  "name": "NimbusDesk",
+  "tagline": "Modern omnichannel customer support & ticketing platform for scaling B2B SaaS",
+  "currency": "USD",
+  "is_synthetic": true,
+  "mrr": 144005.0,
+  "arr": 1728060.0,
+  "cash_balance": 1450000.0,
+  "monthly_gross_burn": 259005.0,
+  "monthly_burn": 115000.0,
+  "runway_months": 12.6,
+  "total_paying_customers": 995,
+  "blended_churn_monthly_pct": 2.8,
+  "cac_blended": 1150.0,
+  "ltv_blended": 4200.0,
+  "current_free_users": 0,
+  "plans": [
+    {
+      "plan_name": "Starter",
+      "price_per_month": 49.0,
+      "active_customers": 600,
+      "mrr": 29400.0,
+      "churn_monthly_pct": 4.5
+    },
+    {
+      "plan_name": "Pro",
+      "price_per_month": 199.0,
+      "active_customers": 350,
+      "mrr": 69650.0,
+      "churn_monthly_pct": 2.1
+    },
+    {
+      "plan_name": "Enterprise",
+      "price_per_month": 999.0,
+      "active_customers": 45,
+      "mrr": 44955.0,
+      "churn_monthly_pct": 0.8
+    }
+  ],
+  "support": {
+    "headcount": 4,
+    "team_cost_monthly": 28000.0,
+    "paid_ticket_rate_per_user_month": 0.12,
+    "cost_per_ticket": 22.0,
+    "max_tickets_per_rep_month": 150,
+    "total_monthly_tickets": 119,
+    "free_user_ticket_rate_estimate": 0.05
+  },
+  "infra": {
+    "current_monthly_cost": 18500.0,
+    "paid_user_cost_per_month": 4.50,
+    "free_user_marginal_cost_per_month": 1.20,
+    "database_cluster_utilization_pct": 58.0,
+    "max_concurrent_connections_headroom_pct": 42.0
+  },
+  "funnel": {
+    "monthly_unique_visitors": 45000,
+    "visitor_to_trial_signup_pct": 1.2,
+    "trial_to_paid_conversion_pct": 18.5,
+    "sales_cycle_days": 18,
+    "estimated_free_tier_monthly_signups": 3200
+  },
+  "engineering_capacity": {
+    "total_engineers": 9,
+    "dedicated_to_core_product": 6,
+    "dedicated_to_infra_and_billing": 3,
+    "free_tier_dev_effort_weeks": 4.0
+  }
+}
