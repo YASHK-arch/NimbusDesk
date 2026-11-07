@@ -39,18 +39,19 @@ def test_decompose_free_plan_dag():
     dag = decompose_decision(decision)
 
     assert isinstance(dag, TaskDAG)
-    # 5 analyses + conflict + skeptic + simulation + draft + verification + finalize = 11 tasks (Fix 5)
-    assert len(dag.tasks) == 11
+    # 5 analyses + discussion (Fix 9) + conflict + skeptic + simulation + draft + verification + finalize = 12 tasks
+    assert len(dag.tasks) == 12
 
     # Verify parallel root tasks
     ready_tasks = dag.get_ready_tasks(completed_ids=set(), active_ids=set())
     ready_owners = {t.owner_agent for t in ready_tasks}
     assert ready_owners == {"CFO", "Growth", "CTO", "Customer", "Product"}
 
-    # Verify topological order per Fix 5
+    # Verify topological order per Fix 5 & Fix 9
     topo = dag.get_topological_order()
     assert topo[-1] == "task_report_finalize"
-    assert topo.index("task_conflict_detection") > topo.index("task_cfo_analysis")
+    assert topo.index("task_agent_discussion") > topo.index("task_cfo_analysis")
+    assert topo.index("task_conflict_detection") > topo.index("task_agent_discussion")
     assert topo.index("task_skeptic_review") > topo.index("task_conflict_detection")
     assert topo.index("task_simulation_resolution") > topo.index("task_skeptic_review")
     assert topo.index("task_report_draft") > topo.index("task_simulation_resolution")

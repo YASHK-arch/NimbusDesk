@@ -57,6 +57,15 @@ class FailureInjection(BaseModel):
     fail_attempts: int = 1
 
 
+class Message(BaseModel):
+    sender: str
+    recipient: str  # agent name or "all"
+    kind: Literal["proposal", "critique", "rebuttal", "query"]
+    content: str
+    assumptions: List[Assumption] = Field(default_factory=list)
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
 class Decision(BaseModel):
     id: str
     type: Literal["free_plan", "price_change", "unsupported"]
@@ -72,6 +81,7 @@ class Task(BaseModel):
     owner_agent: str
     kind: Literal[
         "agent_analysis",
+        "agent_discussion",
         "conflict_detection",
         "skeptic_review",
         "simulation",
@@ -133,6 +143,7 @@ class WorkflowEvent(BaseModel):
         "task_created",
         "agent_started",
         "finding_posted",
+        "message_posted",
         "conflict_detected",
         "simulation_run",
         "agent_failed",

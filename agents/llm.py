@@ -5,9 +5,11 @@ bounded retries, low temperature, and deterministic mock mode.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+from pathlib import Path
 import re
 import types
 import typing
@@ -19,6 +21,45 @@ from pydantic_core import PydanticUndefined
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+
+class ConfigurationError(Exception):
+    """Raised when LLM configuration or provider credentials are missing in real/record modes."""
+    pass
+
+
+def get_llm_mode() -> str:
+    """Read the active LLM execution mode ('mock', 'real', 'record', 'replay')."""
+    mode = os.getenv("LLM_MODE")
+    if mode:
+        return mode.strip().lower()
+    legacy_mock = os.getenv("LLM_MOCK_MODE")
+    if legacy_mock and legacy_mock.lower() in ("false", "0", "no"):
+        return "real"
+    return "mock"
+
+
+def get_llm_badge() -> str:
+    """Return a human-readable badge describing the active LLM mode and provider."""
+    mode = get_llm_mode()
+    if mode == "mock":
+        return "LLM Mode: Mock (deterministic seed)"
+    elif mode == "real":
+        if os.getenv("ANTHROPIC_API_KEY"):
+            prov = "Claude 3.5 Sonnet"
+        elif os.getenv("OPENAI_API_KEY"):
+            prov = "GPT-4o"
+        elif os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+            prov = "Gemini 1.5 Flash"
+        else:
+            prov = "Real API"
+        return f"LLM Mode: Real ({prov})"
+    elif mode == "record":
+        return "LLM Mode: Record (Saving Cassettes)"
+    elif mode == "replay":
+        return "LLM Mode: Replay (Deterministic Cassettes)"
+    return f"LLM Mode: {mode.title()}"
+
 
 # Registry for canned mock handlers: model_class -> handler callable or canned instance
 _MOCK_REGISTRY: Dict[Type[Any], Callable[[str, str], Any]] = {}
@@ -46,20 +87,34 @@ async def llm_call(
     max_retries: int = 3,
     mock_mode: Optional[bool] = None,
     mock_response: Optional[T] = None,
+    cassette_file: Optional[str] = None,
 ) -> T:
     """Execute a structured LLM call validated against a Pydantic model.
 
-    Features:
-    - Provider agnostic: checks Gemini, OpenAI, Anthropic, or defaults to Mock mode.
-    - Low temperature for analytical consistency.
-    - Bounded retries on schema or JSON parse failure.
-    - Deterministic mock mode for test suites and offline resilience.
+    Modes:
+    - mock: returns canned or registered mock response (default).
+    - real: calls LLM API; raises ConfigurationError if keys are missing.
+    - record: calls LLM API and saves output to cassette file.
+    - replay: reads canned response from cassette file without making API calls.
     """
-    if mock_mode is None:
-        mock_mode = os.getenv("LLM_MOCK_MODE", "true").lower() in ("true", "1", "yes")
+    mode = get_llm_mode()
+    if mock_mode is not None:
+        mode = "mock" if mock_mode else "real"
 
-    # If mock mode or explicit mock response requested
-    if mock_mode:
+    # Replay mode: read cassette file
+    if mode == "replay":
+        if not cassette_file:
+            prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+            cassette_file = f"tests/cassettes/{prompt_hash}.json"
+        c_path = Path(cassette_file)
+        if not c_path.exists():
+            raise FileNotFoundError(f"Cassette file not found for replay: {c_path}")
+        with open(c_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return response_model.model_validate(data)
+
+    # Mock mode
+    if mode == "mock":
         if mock_response is not None:
             return mock_response
 
@@ -72,16 +127,21 @@ async def llm_call(
 
         # Attempt default mock instantiation
         try:
-            # Try to instantiate model with defaults or sample fields
             return _generate_default_mock(response_model, prompt)
         except Exception as e:
             logger.warning(f"Default mock generation failed for {response_model.__name__}: {e}")
             raise RuntimeError(f"No mock handler or mock_response provided for {response_model.__name__}")
 
-    # Real LLM Call path
+    # Real or Record mode: require valid API key
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+
+    if not (gemini_key or openai_key or anthropic_key):
+        raise ConfigurationError(
+            "LLM_MODE is set to 'real' or 'record', but no API key was provided. "
+            "Please configure GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
+        )
 
     json_schema = json.dumps(response_model.model_json_schema(), indent=2)
     augmented_prompt = f"{prompt}\n\nStrict output requirement: Return ONLY a valid JSON object matching this JSON Schema:\n{json_schema}"
@@ -112,27 +172,30 @@ async def llm_call(
                     prompt=augmented_prompt,
                     temperature=temperature,
                 )
-            else:
-                # Fallback to mock mode if no API key found
-                logger.info("No API keys found in environment. Falling back to mock mode.")
-                return await llm_call(
-                    prompt=prompt,
-                    response_model=response_model,
-                    system_prompt=system_prompt,
-                    mock_mode=True,
-                    mock_response=mock_response,
-                )
 
             cleaned = clean_json_markdown(raw_response_text)
             parsed_data = json.loads(cleaned)
-            return response_model.model_validate(parsed_data)
+            validated = response_model.model_validate(parsed_data)
+
+            # If in record mode, write cassette to disk
+            if mode == "record":
+                if not cassette_file:
+                    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+                    cassette_file = f"tests/cassettes/{prompt_hash}.json"
+                c_path = Path(cassette_file)
+                c_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(c_path, "w", encoding="utf-8") as f:
+                    json.dump(parsed_data, f, indent=2)
+
+            return validated
 
         except (ValidationError, json.JSONDecodeError, httpx.HTTPError) as err:
             last_error = err
             logger.warning(f"Attempt {attempt}/{max_retries} failed for {response_model.__name__}: {err}")
             if attempt == max_retries:
-                # If retries exhausted and mock fallback is acceptable, or raise
                 break
+
+    raise RuntimeError(f"Failed to obtain valid {response_model.__name__} after {max_retries} attempts: {last_error}")
 
     raise RuntimeError(f"Failed to obtain valid {response_model.__name__} after {max_retries} attempts: {last_error}")
 

@@ -10,6 +10,7 @@ from state.schemas import (
     Conflict,
     Decision,
     Finding,
+    Message,
     SimulationRun,
     Task,
     VerificationResult,
@@ -21,6 +22,7 @@ class WorkflowState(BaseModel):
     decision: Decision
     tasks: Dict[str, Task] = Field(default_factory=dict)
     findings: Dict[str, Finding] = Field(default_factory=dict)  # agent_name -> Finding
+    messages: List[Message] = Field(default_factory=list)
     assumptions: List[Assumption] = Field(default_factory=list)
     conflicts: List[Conflict] = Field(default_factory=list)
     skeptic_challenges: List[str] = Field(default_factory=list)

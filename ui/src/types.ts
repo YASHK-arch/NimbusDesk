@@ -93,12 +93,16 @@ export interface DecisionReport {
   confidence: string;
   disclaimer: string;
   synthetic_badge: boolean;
+  llm_mode?: string;
+  degraded_agent_banner?: string;
   sections: {
     executive_summary: {
       recommendation: string;
       confidence: string;
       primary_strategy: string;
       headline_thesis: string;
+      llm_mode?: string;
+      degraded_agent_banner?: string;
     };
     company_position: Record<string, any>;
     scenario_table: Array<{
@@ -120,6 +124,14 @@ export interface DecisionReport {
       resolved: boolean;
       resolution: string;
       simulation_ids: string[];
+    }>;
+    discussion_messages?: Array<{
+      sender: string;
+      recipient: string;
+      kind: string;
+      content: string;
+      assumptions?: any[];
+      timestamp: string;
     }>;
     sensitivity_tornado: Array<{
       assumption_name: string;

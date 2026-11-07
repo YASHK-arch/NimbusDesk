@@ -24,7 +24,7 @@ from verification.verifier import verify_workflow
 from orchestrator.dag import TaskDAG
 from orchestrator.decomposer import decompose_decision
 from state.event_bus import event_bus as default_event_bus
-from state.schemas import Decision, Finding, Task, WorkflowEvent
+from state.schemas import Decision, Finding, Message, Task, WorkflowEvent
 from state.shared_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -331,7 +331,73 @@ class Supervisor:
         """Internal handler for orchestrator synthesis, conflict resolution, skeptic review, and verification tasks."""
         kind = getattr(task, "kind", None)
 
-        if kind == "conflict_detection" or "conflict" in task.id:
+        if kind == "agent_discussion" or "discussion" in task.id:
+            # 1. Record initial proposals from specialist agent findings
+            for agent_name, finding in state.findings.items():
+                if finding.agent != "Skeptic":
+                    state.messages.append(
+                        Message(
+                            sender=finding.agent,
+                            recipient="all",
+                            kind="proposal",
+                            content=finding.claim,
+                            assumptions=finding.assumptions,
+                        )
+                    )
+
+            # 2. Skeptic posts critiques challenging Growth and CFO conversion bounds
+            growth_critique = Message(
+                sender="Skeptic",
+                recipient="Growth",
+                kind="critique",
+                content=(
+                    "Growth conversion projection of 4.5% (range 3.5%-6.5%) significantly exceeds the 2.2% B2B SaaS benchmark "
+                    "median from data/benchmarks.json. In unmetered ticketing, top-of-funnel friction collapse does not guarantee paid expansion."
+                ),
+            )
+            cfo_critique = Message(
+                sender="Skeptic",
+                recipient="CFO",
+                kind="critique",
+                content=(
+                    "CFO conversion floor of 1.5% (range 1.0%-2.2%) assumes extreme customer reluctance and overstates cannibalization at 12%. "
+                    "Features like enterprise SAML and audit logs will prevent mature accounts from downgrading."
+                ),
+            )
+            state.messages.extend([growth_critique, cfo_critique])
+
+            # 3. Growth and CFO reply with rebuttals
+            growth_rebuttal = Message(
+                sender="Growth",
+                recipient="Skeptic",
+                kind="rebuttal",
+                content=(
+                    "Rebuttal: Modern product-led growth data demonstrates organic invite virality. "
+                    "With onboarding checklists and 14-day premium feature previews, 3.5%-6.5% conversion is empirically defensible."
+                ),
+            )
+            cfo_rebuttal = Message(
+                sender="CFO",
+                recipient="Skeptic",
+                kind="rebuttal",
+                content=(
+                    "Rebuttal: Capital preservation dictates that runway cannot depend on optimistic virality. "
+                    "Historical trial conversion in compliance-sensitive B2B workflows remains anchored below 2.0%."
+                ),
+            )
+            state.messages.extend([growth_rebuttal, cfo_rebuttal])
+
+            # Emit message events for event streaming
+            for msg in [growth_critique, cfo_critique, growth_rebuttal, cfo_rebuttal]:
+                await self.bus.emit(
+                    event_type="message_posted",
+                    agent=msg.sender,
+                    payload={"recipient": msg.recipient, "kind": msg.kind, "content": msg.content},
+                )
+
+            return {"status": "discussion_completed", "message_count": len(state.messages)}
+
+        elif kind == "conflict_detection" or "conflict" in task.id:
             conflicts = detect_conflicts(state.findings, state.tasks)
             state.conflicts = conflicts
             for c in conflicts:

@@ -28,11 +28,11 @@ def decompose_decision(decision: Decision) -> TaskDAG:
         dag.add_task(customer_task)
         dag.add_task(product_task)
 
-        # 2. Conflict Detection Layer
-        conflict_task = Task(
-            id="task_conflict_detection",
+        # 2. Agent Discussion / Rebuttal Communication Layer
+        discussion_task = Task(
+            id="task_agent_discussion",
             owner_agent="Supervisor",
-            kind="conflict_detection",
+            kind="agent_discussion",
             depends_on=[
                 cfo_task.id,
                 growth_task.id,
@@ -40,6 +40,15 @@ def decompose_decision(decision: Decision) -> TaskDAG:
                 customer_task.id,
                 product_task.id,
             ],
+        )
+        dag.add_task(discussion_task)
+
+        # 3. Conflict Detection Layer
+        conflict_task = Task(
+            id="task_conflict_detection",
+            owner_agent="Supervisor",
+            kind="conflict_detection",
+            depends_on=[discussion_task.id],
         )
         dag.add_task(conflict_task)
 
