@@ -11,6 +11,7 @@ import logging
 import time
 from typing import Any, Dict, Optional, Set
 from agents.registry import registry as default_registry
+from orchestrator.checkpoint import CheckpointStore
 from orchestrator.dag import TaskDAG
 from orchestrator.decomposer import decompose_decision
 from state.event_bus import event_bus as default_event_bus
@@ -21,40 +22,64 @@ logger = logging.getLogger(__name__)
 
 
 class Supervisor:
-    def __init__(self, agent_registry=None, bus=None) -> None:
+    def __init__(self, agent_registry=None, bus=None, checkpoint_store=None) -> None:
         self.registry = agent_registry or default_registry
         self.bus = bus or default_event_bus
+        self.checkpoints = checkpoint_store or CheckpointStore()
 
     async def run_workflow(
         self,
         decision: Decision,
         dag: Optional[TaskDAG] = None,
         injected_failures: Optional[Dict[str, str]] = None,
-        checkpoint_callback=None,
+        resume_if_checkpoint_exists: bool = False,
     ) -> WorkflowState:
-        """Execute a complete multi-agent workflow DAG with asynchronous parallelism and event streaming."""
+        """Execute or resume a multi-agent workflow DAG with task-level SQLite checkpointing."""
         injected_failures = injected_failures or {}
         if dag is None:
             dag = decompose_decision(decision)
 
-        # Initialize shared workflow state
-        state = WorkflowState(
-            decision=decision,
-            tasks={t.id: t for t in dag.tasks.values()},
-            status="running",
-        )
+        # Check for existing checkpoint if resume requested
+        existing_checkpoint: Optional[WorkflowState] = None
+        if resume_if_checkpoint_exists:
+            existing_checkpoint = self.checkpoints.load_latest_checkpoint(decision.id)
 
-        completed_ids: Set[str] = set()
+        if existing_checkpoint:
+            state = existing_checkpoint
+            state.status = "recovering"
+            await self.bus.emit(
+                event_type="recovery_started",
+                agent="Supervisor",
+                payload={"decision_id": decision.id, "resuming_from_task": list(state.findings.keys())},
+            )
+            completed_ids: Set[str] = {tid for tid, t in state.tasks.items() if t.status == "done"}
+            await self.bus.emit(
+                event_type="recovery_done",
+                agent="Supervisor",
+                payload={"decision_id": decision.id, "skipped_completed_count": len(completed_ids)},
+            )
+        else:
+            state = WorkflowState(
+                decision=decision,
+                tasks={t.id: t for t in dag.tasks.values()},
+                status="running",
+            )
+            completed_ids = set()
+
+            # Emit task_created events for the plan
+            for t in dag.tasks.values():
+                await self.bus.emit(
+                    event_type="task_created",
+                    agent="Supervisor",
+                    payload={"task_id": t.id, "owner": t.owner_agent, "depends_on": t.depends_on},
+                )
+
         active_tasks: Dict[str, asyncio.Task] = {}
         task_ref_map: Dict[str, Task] = {t.id: t for t in dag.tasks.values()}
-
-        # Emit task_created events for the entire plan
-        for t in dag.tasks.values():
-            await self.bus.emit(
-                event_type="task_created",
-                agent="Supervisor",
-                payload={"task_id": t.id, "owner": t.owner_agent, "depends_on": t.depends_on},
-            )
+        # Sync DAG task statuses with restored state
+        for tid in completed_ids:
+            if tid in task_ref_map:
+                task_ref_map[tid].status = "done"
 
         # Execution loop: dynamically dispatch ready tasks in parallel
         while len(completed_ids) < len(dag.tasks):
@@ -101,17 +126,20 @@ class Supervisor:
                         task_obj = task_ref_map[tid]
                         task_obj.status = "done"
                         completed_ids.add(tid)
+                        state.tasks[tid] = task_obj
 
-                        # Checkpoint hook
-                        if checkpoint_callback:
-                            await checkpoint_callback(state, task_obj)
+                        # Save checkpoint to SQLite after each task
+                        ckpt_id = self.checkpoints.save_checkpoint(state, tid)
+                        state.checkpoint_id = str(ckpt_id)
 
                     except Exception as err:
                         logger.error(f"Task {tid} execution error: {err}")
                         task_obj = task_ref_map[tid]
                         task_obj.status = "failed"
                         task_obj.error_message = str(err)
-                        # We let the orchestrator loop or recovery handle it
+                        state.tasks[tid] = task_obj
+                        # Persist failed checkpoint
+                        self.checkpoints.save_checkpoint(state, tid)
                         completed_ids.add(tid)
 
             for fid in finished_ids:
