@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from api.graph import get_company_dependency_graph
@@ -287,3 +289,19 @@ async def get_decision_history():
 async def get_graph():
     """Return company operational dependency graph for React Flow."""
     return get_company_dependency_graph(highlight_affected=True)
+
+
+# Static SPA mounting for production UI
+UI_DIST_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
+if UI_DIST_DIR.exists() and (UI_DIST_DIR / "index.html").exists():
+    app.mount("/assets", StaticFiles(directory=UI_DIST_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if full_path.startswith("api/") or full_path in ("health", "docs", "openapi.json"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        target_file = UI_DIST_DIR / full_path
+        if target_file.exists() and target_file.is_file():
+            return FileResponse(target_file)
+        return FileResponse(UI_DIST_DIR / "index.html")
+

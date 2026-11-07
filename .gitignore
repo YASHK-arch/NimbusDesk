@@ -18,7 +18,6 @@ build/
 
 # Node / Frontend
 ui/node_modules/
-ui/dist/
 ui/build/
 
 # Database / Runtime artifacts

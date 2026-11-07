@@ -31,8 +31,8 @@
 | **Step 9** | Skeptic & Deterministic Workflow Verification | **COMPLETED** | Skeptic challenges aggressive assumptions & downgrades confidence; 5 deterministic checks (units, ratios, R4 traceability caught fabricated numbers) |
 | **Step 10** | Consolidated Decision Report Builder (JSON + Markdown) | **COMPLETED** | 10-section report (scenarios, tornado, flip-point, provenance ledger, conflicts, verification summary, run log, disclaimer), 100% R4 traced |
 | **Step 11** | API Endpoints & SSE Streaming | **COMPLETED** | Complete REST suite (company, submit, status, stream, chaos injection, report JSON/MD, approve, history, graph) |
-| **Step 12** | Frontend: 3 Screens (Console, Report, Calibration) | PENDING | Live DAG execution, failure injection button, tornado charts |
-| **Step 13** | Human Approval Gate, History & Calibration Screen | PENDING | Human approval persists record, calibration stats computed |
+| **Step 12** | Frontend: 3 Screens (Console, Report, Calibration) | **COMPLETED** | React+TS+Tailwind SPA: Live execution DAG, SSE feed, node inspector, failure injection, scenario tables, tornado charts |
+| **Step 13** | Human Approval Gate, History & Calibration Screen | **COMPLETED** | POST /approve gate stores DecisionRecord in history, calibration stats computed with average error & most-wrong assumptions |
 | **Step 14** | Hardening, Demo Fallback Cache & Documentation | PENDING | All acceptance criteria pass on clean clone |
 
 ---
