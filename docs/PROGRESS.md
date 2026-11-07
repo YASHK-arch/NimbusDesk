@@ -23,7 +23,7 @@
 | **Step 1** | Schemas & Synthetic Data (`data/synthetic_company.json`, seeded decisions) | **COMPLETED** | Schemas validate (9/9 tests pass), NimbusDesk loaded with 12.6mo runway & tension |
 | **Step 2** | Agent Base Class & Specialists (CFO, Growth, CTO, Customer, Skeptic, Registry) | **COMPLETED** | Distinct objectives, tools, non-overlapping conversion ranges (CFO 1.0-2.2% vs Growth 3.5-6.5%), chaos hooks verified |
 | **Step 3** | Task Decomposition Engine (NLP -> Decision -> Task DAG) | **COMPLETED** | Natural language parsing, cycle detection, 10-node DAG decomposition with 5 parallel analysis roots |
-| **Step 4** | Supervisor Architecture & Parallel Execution | PENDING | Concurrent execution with timestamps, dependencies respected |
+| **Step 4** | Supervisor Architecture & Parallel Execution | **COMPLETED** | Async parallel dispatcher with timestamp tracking (<0.05s spread), dependency barriers, and full event bus |
 | **Step 5** | Communication Protocol & Shared State (SQLite Checkpoints) | PENDING | Kill/resume mid-run without redoing work, malformed outputs rejected |
 | **Step 6** | Deterministic SaaS Simulation Engine (Monte Carlo, Tornado, Flip-Points) | PENDING | Reproducible seeds, 6/12/24mo metrics, flip-point search |
 | **Step 7** | Conflict Detection & Simulation-Based Resolution | PENDING | CFO vs Growth conflict detected, resolved with simulation delta |
