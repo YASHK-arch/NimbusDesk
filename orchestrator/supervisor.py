@@ -457,6 +457,19 @@ class Supervisor:
                             agent="Supervisor",
                             payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
                         )
+                # Run Monte Carlo probability distributions for pricing strategies
+                from simulation.monte_carlo import run_monte_carlo_suite
+                from simulation.reconcile import reconcile_assumptions
+                reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
+                mc_results = run_monte_carlo_suite(
+                    strategies=price_strategies,
+                    reconciled_params=reconciled,
+                    company=load_company_snapshot(),
+                    n_iterations=250,
+                    seed=42,
+                    min_runway=10.0,
+                )
+                state.mc_summaries = mc_results
                 return {"status": "pricing_simulations_completed", "runs_count": len(state.simulation_runs)}
 
             # 1. Resolve conflicts via simulation
@@ -493,6 +506,20 @@ class Supervisor:
                         payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
                     )
 
+            # 3. Run Monte Carlo probability distributions across all strategies
+            from simulation.monte_carlo import run_monte_carlo_suite
+            from simulation.reconcile import reconcile_assumptions
+            reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
+            mc_results = run_monte_carlo_suite(
+                strategies=strategies,
+                reconciled_params=reconciled,
+                company=load_company_snapshot(),
+                n_iterations=250,
+                seed=42,
+                min_runway=10.0,
+            )
+            state.mc_summaries = mc_results
+
             return {"status": "simulations_completed", "total_runs": len(state.simulation_runs)}
 
         elif kind == "report_draft" or task.id == "task_report_draft":
@@ -511,6 +538,7 @@ class Supervisor:
                 state.simulation_runs,
                 company,
                 draft_report=state.report,
+                mc_summaries=state.mc_summaries,
             )
             state.verification_results = results
 
@@ -526,6 +554,7 @@ class Supervisor:
                     state.simulation_runs,
                     company,
                     draft_report=state.report,
+                    mc_summaries=state.mc_summaries,
                 )
                 state.verification_results = results
 

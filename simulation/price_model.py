@@ -163,8 +163,8 @@ def simulate_price_change(
             "net_contribution": round(cum_net_contrib, 2),
         })
 
-    m12 = history[11]
-    m24 = history[23]
+    m12 = history[min(11, len(history) - 1)]
+    m24 = history[min(23, len(history) - 1)]
 
     # Net Retention Rate at Month 12: baseline accounts retained value
     net_retention_12 = round((m12["mrr"] - (45.0 * p_starter * 12 * 0.3)) / initial_mrr, 4)

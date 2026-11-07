@@ -116,6 +116,25 @@ export interface DecisionReport {
       net_contribution_12: number;
       net_contribution_24: number;
     }>;
+    outcome_ranges?: Array<{
+      strategy: string;
+      n_iterations: number;
+      seed: number;
+      p_best: number;
+      p_feasible: number;
+      mrr_month_12: { p10: number; p50: number; p90: number };
+      mrr_month_12_p10: number;
+      mrr_month_12_p50: number;
+      mrr_month_12_p90: number;
+      runway_months_12: { p10: number; p50: number; p90: number };
+      runway_months_12_p10: number;
+      runway_months_12_p50: number;
+      runway_months_12_p90: number;
+      net_contribution_12: { p10: number; p50: number; p90: number };
+      net_contribution_12_p10: number;
+      net_contribution_12_p50: number;
+      net_contribution_12_p90: number;
+    }>;
     conflicts: Array<{
       id: string;
       type: string;

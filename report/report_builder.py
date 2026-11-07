@@ -273,6 +273,35 @@ def build_consolidated_report(
         for tid, meta in state.execution_timeline.items()
     ]
 
+    # 11. Outcome Ranges (Monte Carlo Distributions)
+    outcome_ranges: List[Dict[str, Any]] = []
+    if mc_summaries:
+        for strat in target_strategies:
+            if strat in mc_summaries:
+                mc = mc_summaries[strat]
+                mrr_dist = mc.get("mrr_month_12", {})
+                runway_dist = mc.get("runway_months_12", {})
+                net_dist = mc.get("net_contribution_12", {})
+                outcome_ranges.append({
+                    "strategy": strat,
+                    "n_iterations": mc.get("n_iterations", 250),
+                    "seed": mc.get("seed", 42),
+                    "p_best": mc.get("p_best", 0.0),
+                    "p_feasible": mc.get("p_feasible", 0.0),
+                    "mrr_month_12": mrr_dist,
+                    "mrr_month_12_p10": mrr_dist.get("p10", 0.0),
+                    "mrr_month_12_p50": mrr_dist.get("p50", 0.0),
+                    "mrr_month_12_p90": mrr_dist.get("p90", 0.0),
+                    "runway_months_12": runway_dist,
+                    "runway_months_12_p10": runway_dist.get("p10", 0.0),
+                    "runway_months_12_p50": runway_dist.get("p50", 0.0),
+                    "runway_months_12_p90": runway_dist.get("p90", 0.0),
+                    "net_contribution_12": net_dist,
+                    "net_contribution_12_p10": net_dist.get("p10", 0.0),
+                    "net_contribution_12_p50": net_dist.get("p50", 0.0),
+                    "net_contribution_12_p90": net_dist.get("p90", 0.0),
+                })
+
     llm_badge = get_llm_badge()
     report = {
         "decision_id": state.decision.id,
@@ -303,6 +332,7 @@ def build_consolidated_report(
             },
             "company_position": company_position,
             "scenario_table": scenario_table,
+            "outcome_ranges": outcome_ranges,
             "conflicts": conflict_panel,
             "discussion_messages": [m.model_dump() for m in state.messages],
             "sensitivity_tornado": tornado_data,
@@ -387,6 +417,25 @@ def render_report_markdown(report: Dict[str, Any], state: Optional[WorkflowState
             f"{row['gross_margin_12_expected']*100:.1f}% | "
             f"${row['net_contribution_12']:,.0f} |"
         )
+
+    if sec.get("outcome_ranges"):
+        md.extend([
+            "",
+            "---",
+            "",
+            "## 3. Outcome Ranges (Monte Carlo Distributions)",
+            "*Probabilistic simulation across 250 iterations with stored seed and triangular sampling over reconciled bounds.*",
+            "",
+            "| Strategy | Win Prob (p_best) | Feasibility (p_feasible) | MRR (p10 / p50 / p90) | Net Contribution 12 (p10 / p50 / p90) | Runway 12 (p10 / p50 / p90) |",
+            "|---|---|---|---|---|---|",
+        ])
+        for mc in sec["outcome_ranges"]:
+            mrr_str = f"${mc['mrr_month_12_p10']:,.0f} / ${mc['mrr_month_12_p50']:,.0f} / ${mc['mrr_month_12_p90']:,.0f}"
+            net_str = f"${mc['net_contribution_12_p10']:,.0f} / ${mc['net_contribution_12_p50']:,.0f} / ${mc['net_contribution_12_p90']:,.0f}"
+            runway_str = f"{mc['runway_months_12_p10']:.1f} / {mc['runway_months_12_p50']:.1f} / {mc['runway_months_12_p90']:.1f} mo"
+            md.append(
+                f"| {mc['strategy']} | {mc['p_best']*100:.1f}% | {mc['p_feasible']*100:.1f}% | {mrr_str} | {net_str} | {runway_str} |"
+            )
 
     if sec.get("discussion_messages"):
         md.extend([

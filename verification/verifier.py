@@ -16,6 +16,8 @@ def verify_workflow(
     company: CompanySnapshot,
     draft_report_metrics: Optional[Dict[str, Any]] = None,
     draft_report: Optional[Dict[str, Any]] = None,
+    report_to_check: Optional[Dict[str, Any]] = None,
+    mc_summaries: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, List[VerificationResult]]:
     """Execute all deterministic verification checks against assumptions, simulation runs, and draft report.
 
@@ -27,6 +29,7 @@ def verify_workflow(
     5. required_sections_present
     6. report_number_traceability (Hard Rule R4)
     """
+    report_to_check = report_to_check or draft_report
     results: List[VerificationResult] = []
 
     # Check 1: Unit Consistency
@@ -132,7 +135,6 @@ def verify_workflow(
         )
 
     # Check 4: Scenario Ordering Check (conservative <= expected <= optimistic)
-    report_to_check = draft_report
     if report_to_check and "sections" in report_to_check and "scenario_table" in report_to_check["sections"]:
         table = report_to_check["sections"]["scenario_table"]
         ordering_failures = []
@@ -241,6 +243,19 @@ def verify_workflow(
                             valid_numbers.add(round(float(hv), 2))
                             valid_numbers.add(round(float(hv), 0))
 
+    # Monte Carlo outputs
+    if mc_summaries:
+        for strat, mc in mc_summaries.items():
+            for k, v in mc.items():
+                if isinstance(v, (int, float)):
+                    valid_numbers.add(round(float(v), 2))
+                    valid_numbers.add(round(float(v), 4))
+                elif isinstance(v, dict):
+                    for subk, subv in v.items():
+                        if isinstance(subv, (int, float)):
+                            valid_numbers.add(round(float(subv), 2))
+                            valid_numbers.add(round(float(subv), 0))
+
     trace_failures: List[str] = []
 
     if report_to_check and "sections" in report_to_check:
@@ -253,6 +268,15 @@ def verify_workflow(
                     rounded_val = round(float(val), 2)
                     if not any(abs(rounded_val - allowed) < 0.05 for allowed in valid_numbers):
                         trace_failures.append(f"Scenario table {metric_k} value {rounded_val} does not trace to simulation")
+
+        # Check outcome ranges
+        for row in sec.get("outcome_ranges", []):
+            for metric_k in ["mrr_month_12_p50", "runway_months_12_p50", "net_contribution_12_p50", "p_best", "p_feasible"]:
+                val = row.get(metric_k)
+                if val is not None:
+                    rounded_val = round(float(val), 2)
+                    if not any(abs(rounded_val - allowed) < 0.05 for allowed in valid_numbers):
+                        trace_failures.append(f"Outcome ranges {metric_k} value {rounded_val} does not trace to Monte Carlo simulation")
 
     # Also support draft_report_metrics parameter
     if draft_report_metrics:

@@ -7,6 +7,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
+  TrendingUp,
 } from 'lucide-react';
 import { DecisionReport } from '../types';
 import { FlipPointCard } from './FlipPointCard';
@@ -41,7 +42,7 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
   }
 
   const { sections, recommendation, confidence, disclaimer } = report;
-  const { executive_summary, scenario_table, conflicts, sensitivity_tornado, flip_point, assumption_ledger, risks, verification_summary } = sections;
+  const { executive_summary, scenario_table, outcome_ranges, conflicts, sensitivity_tornado, flip_point, assumption_ledger, risks, verification_summary } = sections;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
@@ -138,6 +139,63 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
           </table>
         </div>
       </div>
+
+      {/* 3. Outcome Ranges (Monte Carlo Distributions) */}
+      {outcome_ranges && outcome_ranges.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-indigo-400" />
+              <div>
+                <h3 className="text-base font-bold text-white">Outcome Ranges (Monte Carlo Distributions)</h3>
+                <p className="text-xs text-slate-400">
+                  250 iterations across reconciled assumption bounds using triangular sampling (Seed: 42)
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-mono px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-700/50 text-indigo-300">
+              Probabilistic Model
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="py-2.5 px-3">Strategy</th>
+                  <th className="py-2.5 px-3 text-center">Win Prob (p_best)</th>
+                  <th className="py-2.5 px-3 text-center">Feasibility (p_feasible)</th>
+                  <th className="py-2.5 px-3 text-right">MRR (p10 / p50 / p90)</th>
+                  <th className="py-2.5 px-3 text-right">Net Contribution (p10 / p50 / p90)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {outcome_ranges.map((mc, idx) => (
+                  <tr key={idx} className="hover:bg-slate-800/40 transition">
+                    <td className="py-3 px-3 font-medium text-slate-200">{mc.strategy}</td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 px-2 py-0.5 rounded">
+                        {(mc.p_best * 100).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-800/50 px-2 py-0.5 rounded">
+                        {(mc.p_feasible * 100).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-300">
+                      ${Math.round(mc.mrr_month_12_p10).toLocaleString()} / ${Math.round(mc.mrr_month_12_p50).toLocaleString()} / ${Math.round(mc.mrr_month_12_p90).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-slate-100">
+                      ${Math.round(mc.net_contribution_12_p10).toLocaleString()} / ${Math.round(mc.net_contribution_12_p50).toLocaleString()} / ${Math.round(mc.net_contribution_12_p90).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* 4. Conflict Resolution Panel */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">

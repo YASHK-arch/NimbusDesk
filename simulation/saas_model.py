@@ -24,17 +24,12 @@ def simulate(
     assumptions: Dict[str, float],
     company: Optional[CompanySnapshot] = None,
     months: int = 24,
-    seed: int = 42,
+    seed: Optional[int] = None,
 ) -> SimulationRun:
     """Simulate SaaS financial trajectory over 12-24 monthly steps.
 
-    Parameters:
-        strategy: Strategy A, B, or C.
-        scenario: 'conservative', 'expected', 'optimistic', 'stress_test'.
-        assumptions: dictionary of key parameters (conversion, signups, infra, cannibalization).
-        company: baseline company snapshot (defaults to NimbusDesk).
-        months: number of monthly time steps (default 24).
-        seed: stored random seed for determinism.
+    Note: simulate() is purely deterministic based on input assumptions and company parameters.
+    Optional seed is preserved on the SimulationRun record for tracking when called by Monte Carlo.
     """
     if company is None:
         company = load_company_snapshot()
@@ -222,5 +217,5 @@ def simulate(
         scenario=scenario,
         parameters=copy.deepcopy(assumptions),
         outputs=outputs,
-        seed=seed,
+        seed=seed if seed is not None else 0,
     )
