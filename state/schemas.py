@@ -133,6 +133,7 @@ class CompanySnapshot(BaseModel):
     mrr: float
     arr: float
     cash_balance: float
+    monthly_gross_burn: float = 259005.0
     monthly_burn: float
     runway_months: float
     total_paying_customers: int
