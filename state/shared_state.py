@@ -23,7 +23,9 @@ class WorkflowState(BaseModel):
     findings: Dict[str, Finding] = Field(default_factory=dict)  # agent_name -> Finding
     assumptions: List[Assumption] = Field(default_factory=list)
     conflicts: List[Conflict] = Field(default_factory=list)
+    skeptic_challenges: List[str] = Field(default_factory=list)
     simulation_runs: List[SimulationRun] = Field(default_factory=list)
+    mc_summaries: Optional[Dict[str, Any]] = None
     verification_results: List[VerificationResult] = Field(default_factory=list)
     report: Optional[Dict[str, Any]] = None
     event_log: List[WorkflowEvent] = Field(default_factory=list)

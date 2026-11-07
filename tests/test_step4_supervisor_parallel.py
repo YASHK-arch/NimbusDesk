@@ -56,8 +56,8 @@ async def test_supervisor_parallel_execution_and_timestamps():
         f"Downstream conflict task started ({conflict_start}) before all root tasks finished ({max_root_finish})"
     )
 
-    # Verify report generation is strictly the last task
-    report_start = timeline["task_report_generation"]["start_time"]
+    # Verify report finalize is strictly the last task per Fix 5 DAG structure
+    report_start = timeline["task_report_finalize"]["start_time"]
     verification_finish = timeline["task_workflow_verification"]["finish_time"]
     assert report_start >= verification_finish
 

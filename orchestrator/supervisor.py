@@ -175,81 +175,82 @@ class Supervisor:
         )
 
         try:
-            # Handle specialist agent execution
-            agent = self.registry.get_agent(task.owner_agent)
-            if agent:
-                finding: Optional[Finding] = None
-                task.attempts = 1
-                try:
-                    finding = await agent.run(task=task, state=state.model_dump(), failure_mode=failure_mode)
-                except Exception as first_exc:
-                    await self.bus.emit(
-                        event_type="agent_failed",
-                        agent=task.owner_agent,
-                        payload={"task_id": task.id, "attempt": task.attempts, "error": str(first_exc)},
-                    )
-                    await self.bus.emit(
-                        event_type="recovery_started",
-                        agent="Supervisor",
-                        payload={"task_id": task.id, "target_agent": task.owner_agent, "action": "retry_with_backoff"},
-                    )
-                    task.attempts += 1
-                    await self.recovery.apply_backoff(task.attempts)
-
-                    # Transient retry attempt without injected failure
+            # Handle specialist agent analysis tasks
+            if task.kind == "agent_analysis":
+                agent = self.registry.get_agent(task.owner_agent)
+                if agent:
+                    finding: Optional[Finding] = None
+                    task.attempts = 1
                     try:
-                        finding = await agent.run(task=task, state=state.model_dump(), failure_mode=None)
+                        finding = await agent.run(task=task, state=state.model_dump(), failure_mode=failure_mode)
+                    except Exception as first_exc:
                         await self.bus.emit(
-                            event_type="recovery_done",
-                            agent="Supervisor",
-                            payload={"task_id": task.id, "recovered_via": "retry_success"},
-                        )
-                    except Exception as retry_exc:
-                        # Fallback to degraded recovery mode
-                        finding = self.recovery.create_degraded_fallback_finding(
-                            task=task,
-                            agent_name=task.owner_agent,
-                            error_msg=str(retry_exc),
+                            event_type="agent_failed",
+                            agent=task.owner_agent,
+                            payload={"task_id": task.id, "attempt": task.attempts, "error": str(first_exc)},
                         )
                         await self.bus.emit(
-                            event_type="recovery_done",
+                            event_type="recovery_started",
                             agent="Supervisor",
-                            payload={"task_id": task.id, "recovered_via": "degraded_fallback"},
+                            payload={"task_id": task.id, "target_agent": task.owner_agent, "action": "retry_with_backoff"},
                         )
+                        task.attempts += 1
+                        await self.recovery.apply_backoff(task.attempts)
 
-                state.findings[agent.name] = finding
+                        # Transient retry attempt without injected failure
+                        try:
+                            finding = await agent.run(task=task, state=state.model_dump(), failure_mode=None)
+                            await self.bus.emit(
+                                event_type="recovery_done",
+                                agent="Supervisor",
+                                payload={"task_id": task.id, "recovered_via": "retry_success"},
+                            )
+                        except Exception as retry_exc:
+                            # Fallback to degraded recovery mode
+                            finding = self.recovery.create_degraded_fallback_finding(
+                                task=task,
+                                agent_name=task.owner_agent,
+                                error_msg=str(retry_exc),
+                            )
+                            await self.bus.emit(
+                                event_type="recovery_done",
+                                agent="Supervisor",
+                                payload={"task_id": task.id, "recovered_via": "degraded_fallback"},
+                            )
 
-                # Collect proposed assumptions
-                for asm in finding.assumptions:
-                    if not any(existing.name == asm.name and existing.proposed_by == asm.proposed_by for existing in state.assumptions):
-                        state.assumptions.append(asm)
+                    state.findings[agent.name] = finding
 
-                finish_ts = time.time()
-                finish_iso = datetime.now(timezone.utc).isoformat()
+                    # Collect proposed assumptions
+                    for asm in finding.assumptions:
+                        if not any(existing.name == asm.name and existing.proposed_by == asm.proposed_by for existing in state.assumptions):
+                            state.assumptions.append(asm)
 
-                state.execution_timeline[task.id] = {
-                    "agent": task.owner_agent,
-                    "start_time": start_ts,
-                    "finish_time": finish_ts,
-                    "duration_sec": round(finish_ts - start_ts, 4),
-                    "start_iso": start_iso,
-                    "finish_iso": finish_iso,
-                }
+                    finish_ts = time.time()
+                    finish_iso = datetime.now(timezone.utc).isoformat()
 
-                await self.bus.emit(
-                    event_type="finding_posted",
-                    agent=task.owner_agent,
-                    payload={
-                        "task_id": task.id,
-                        "claim": finding.claim,
-                        "recommendation": finding.recommendation,
-                        "confidence": finding.confidence,
-                        "assumptions_count": len(finding.assumptions),
-                    },
-                )
-                return finding
+                    state.execution_timeline[task.id] = {
+                        "agent": task.owner_agent,
+                        "start_time": start_ts,
+                        "finish_time": finish_ts,
+                        "duration_sec": round(finish_ts - start_ts, 4),
+                        "start_iso": start_iso,
+                        "finish_iso": finish_iso,
+                    }
 
-            # Handle supervisor internal tasks (conflict, simulation, verification, report)
+                    await self.bus.emit(
+                        event_type="finding_posted",
+                        agent=task.owner_agent,
+                        payload={
+                            "task_id": task.id,
+                            "claim": finding.claim,
+                            "recommendation": finding.recommendation,
+                            "confidence": finding.confidence,
+                            "assumptions_count": len(finding.assumptions),
+                        },
+                    )
+                    return finding
+
+            # Handle supervisor internal tasks (conflict, skeptic_review, simulation, report_draft, verification, report_finalize)
             result = await self._handle_supervisor_task(task, state)
 
             finish_ts = time.time()
@@ -274,8 +275,10 @@ class Supervisor:
             raise
 
     async def _handle_supervisor_task(self, task: Task, state: WorkflowState) -> Any:
-        """Internal handler for orchestrator synthesis, conflict resolution, and verification tasks."""
-        if "conflict" in task.id:
+        """Internal handler for orchestrator synthesis, conflict resolution, skeptic review, and verification tasks."""
+        kind = getattr(task, "kind", None)
+
+        if kind == "conflict_detection" or "conflict" in task.id:
             conflicts = detect_conflicts(state.findings, state.tasks)
             state.conflicts = conflicts
             for c in conflicts:
@@ -286,7 +289,34 @@ class Supervisor:
                 )
             return {"status": "conflicts_detected", "count": len(conflicts)}
 
-        elif "simulation" in task.id:
+        elif kind == "skeptic_review" or "skeptic" in task.id:
+            # 1. Execute Skeptic agent against current workflow findings
+            skeptic_agent = self.registry.get_agent("Skeptic")
+            if skeptic_agent:
+                try:
+                    f_skeptic = await skeptic_agent.run(task=task, state=state.model_dump())
+                    state.findings["Skeptic"] = f_skeptic
+                    for asm in f_skeptic.assumptions:
+                        if not any(existing.name == asm.name and existing.proposed_by == asm.proposed_by for existing in state.assumptions):
+                            state.assumptions.append(asm)
+                except Exception as e:
+                    logger.warning("Skeptic agent execution error: %s", e)
+
+            # 2. Run deterministic skeptic audit logic
+            updated_assumptions, challenges = run_skeptic_audit(state.findings, state.assumptions)
+            state.assumptions = updated_assumptions
+            state.skeptic_challenges = challenges
+            for ch in challenges:
+                logger.info("Skeptic audit challenge: %s", ch)
+
+            await self.bus.emit(
+                event_type="finding_posted",
+                agent="Skeptic",
+                payload={"task_id": task.id, "challenges_count": len(challenges)},
+            )
+            return {"status": "skeptic_review_completed", "challenges_count": len(challenges)}
+
+        elif kind == "simulation" or "simulation" in task.id:
             # 1. Resolve conflicts via simulation
             resolved_conflicts, conflict_sim_runs = resolve_conflicts_with_simulation(state.conflicts, state.findings)
             state.conflicts = resolved_conflicts
@@ -323,10 +353,40 @@ class Supervisor:
 
             return {"status": "simulations_completed", "total_runs": len(state.simulation_runs)}
 
-        elif "verification" in task.id:
+        elif kind == "report_draft" or task.id == "task_report_draft":
             company = load_company_snapshot()
-            all_passed, results = verify_workflow(state.assumptions, state.simulation_runs, company)
+            draft_report = build_consolidated_report(state, company)
+            state.report = draft_report
+            return {"status": "report_draft_ready"}
+
+        elif kind == "verification" or "verification" in task.id:
+            company = load_company_snapshot()
+            if state.report is None:
+                state.report = build_consolidated_report(state, company)
+
+            all_passed, results = verify_workflow(
+                state.assumptions,
+                state.simulation_runs,
+                company,
+                draft_report=state.report,
+            )
             state.verification_results = results
+
+            # Bounded loop-back (up to 2 loops)
+            loop = 0
+            while not all_passed and loop < 2:
+                loop += 1
+                task.attempts += 1
+                logger.warning("Verification failed (attempt %d/2). Rebuilding draft report...", loop)
+                state.report = build_consolidated_report(state, company)
+                all_passed, results = verify_workflow(
+                    state.assumptions,
+                    state.simulation_runs,
+                    company,
+                    draft_report=state.report,
+                )
+                state.verification_results = results
+
             passed_count = sum(1 for r in results if r.status == "passed")
 
             if all_passed:
@@ -344,9 +404,13 @@ class Supervisor:
                 )
                 return {"status": "verification_failed", "results": [r.model_dump() for r in results]}
 
-        elif "report" in task.id:
+        elif kind == "report_finalize" or "report" in task.id:
             company = load_company_snapshot()
             report_dict = build_consolidated_report(state, company)
+            has_failed_check = any(r.status == "failed" for r in state.verification_results)
+            if has_failed_check:
+                report_dict["recommendation"] = f"Unverified: {report_dict['recommendation']}"
+                report_dict["sections"]["executive_summary"]["recommendation"] = report_dict["recommendation"]
             state.report = report_dict
             await self.bus.emit(
                 event_type="report_ready",
@@ -359,5 +423,7 @@ class Supervisor:
                 },
             )
             return {"status": "report_ready", "report_id": f"rep-{state.decision.id}"}
+
+        return {"status": "done"}
 
         return {"status": "done"}

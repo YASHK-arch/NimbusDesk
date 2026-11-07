@@ -61,6 +61,15 @@ class Decision(BaseModel):
 class Task(BaseModel):
     id: str
     owner_agent: str
+    kind: Literal[
+        "agent_analysis",
+        "conflict_detection",
+        "skeptic_review",
+        "simulation",
+        "report_draft",
+        "verification",
+        "report_finalize",
+    ] = "agent_analysis"
     depends_on: List[str] = Field(default_factory=list)
     status: Literal["pending", "running", "done", "failed", "retrying", "blocked"] = "pending"
     input_ref: Optional[str] = None

@@ -39,21 +39,23 @@ def test_decompose_free_plan_dag():
     dag = decompose_decision(decision)
 
     assert isinstance(dag, TaskDAG)
-    assert len(dag.tasks) == 10
+    # 5 analyses + conflict + skeptic + simulation + draft + verification + finalize = 11 tasks (Fix 5)
+    assert len(dag.tasks) == 11
 
     # Verify parallel root tasks
     ready_tasks = dag.get_ready_tasks(completed_ids=set(), active_ids=set())
     ready_owners = {t.owner_agent for t in ready_tasks}
     assert ready_owners == {"CFO", "Growth", "CTO", "Customer", "Product"}
 
-    # Verify topological order
+    # Verify topological order per Fix 5
     topo = dag.get_topological_order()
-    assert topo[-1] == "task_report_generation"
+    assert topo[-1] == "task_report_finalize"
     assert topo.index("task_conflict_detection") > topo.index("task_cfo_analysis")
-    assert topo.index("task_simulation_resolution") > topo.index("task_conflict_detection")
-    assert topo.index("task_skeptic_audit") > topo.index("task_simulation_resolution")
-    assert topo.index("task_workflow_verification") > topo.index("task_skeptic_audit")
-    assert topo.index("task_report_generation") > topo.index("task_workflow_verification")
+    assert topo.index("task_skeptic_review") > topo.index("task_conflict_detection")
+    assert topo.index("task_simulation_resolution") > topo.index("task_skeptic_review")
+    assert topo.index("task_report_draft") > topo.index("task_simulation_resolution")
+    assert topo.index("task_workflow_verification") > topo.index("task_report_draft")
+    assert topo.index("task_report_finalize") > topo.index("task_workflow_verification")
 
 
 def test_dag_cycle_detection():
