@@ -15,6 +15,7 @@ from conflict.detector import detect_conflicts
 from conflict.resolver import resolve_conflicts_with_simulation
 from orchestrator.checkpoint import CheckpointStore
 from orchestrator.recovery import RecoveryPolicy
+from report.report_builder import build_consolidated_report
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from state.company import load_company_snapshot
 from verification.skeptic_audit import run_skeptic_audit
@@ -328,11 +329,19 @@ class Supervisor:
                 return {"status": "verification_failed", "results": [r.model_dump() for r in results]}
 
         elif "report" in task.id:
+            company = load_company_snapshot()
+            report_dict = build_consolidated_report(state, company)
+            state.report = report_dict
             await self.bus.emit(
                 event_type="report_ready",
                 agent="Supervisor",
-                payload={"task_id": task.id, "report_id": f"rep-{state.decision.id}"},
+                payload={
+                    "task_id": task.id,
+                    "report_id": f"rep-{state.decision.id}",
+                    "recommendation": report_dict["recommendation"],
+                    "confidence": report_dict["confidence"],
+                },
             )
-            return {"status": "report_ready"}
+            return {"status": "report_ready", "report_id": f"rep-{state.decision.id}"}
 
         return {"status": "done"}
