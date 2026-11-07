@@ -11,7 +11,10 @@ import logging
 import time
 from typing import Any, Dict, Optional, Set
 from agents.registry import registry as default_registry
+from conflict.detector import detect_conflicts
+from conflict.resolver import resolve_conflicts_with_simulation
 from orchestrator.checkpoint import CheckpointStore
+from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from orchestrator.dag import TaskDAG
 from orchestrator.decomposer import decompose_decision
 from state.event_bus import event_bus as default_event_bus
@@ -226,22 +229,39 @@ class Supervisor:
             raise
 
     async def _handle_supervisor_task(self, task: Task, state: WorkflowState) -> Any:
-        """Internal handler for orchestrator synthesis and verification tasks."""
+        """Internal handler for orchestrator synthesis, conflict resolution, and verification tasks."""
         if "conflict" in task.id:
-            await self.bus.emit(
-                event_type="conflict_detected",
-                agent="Supervisor",
-                payload={"task_id": task.id, "status": "checking_conflicts"},
-            )
-            return {"status": "conflicts_processed"}
+            conflicts = detect_conflicts(state.findings, state.tasks)
+            state.conflicts = conflicts
+            for c in conflicts:
+                await self.bus.emit(
+                    event_type="conflict_detected",
+                    agent="Supervisor",
+                    payload={"conflict_id": c.id, "type": c.type, "agents": c.agents, "disputed_item": c.disputed_item},
+                )
+            return {"status": "conflicts_detected", "count": len(conflicts)}
 
         elif "simulation" in task.id:
-            await self.bus.emit(
-                event_type="simulation_run",
-                agent="Supervisor",
-                payload={"task_id": task.id, "status": "simulation_executed"},
-            )
-            return {"status": "simulations_completed"}
+            # 1. Resolve conflicts via simulation
+            resolved_conflicts, conflict_sim_runs = resolve_conflicts_with_simulation(state.conflicts, state.findings)
+            state.conflicts = resolved_conflicts
+            state.simulation_runs.extend(conflict_sim_runs)
+
+            # 2. Run standard 3 strategies x 3 scenarios matrix
+            base_params = {asm.name: asm.base for asm in state.assumptions}
+            strategies = [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+            scenarios = ["conservative", "expected", "optimistic"]
+            for strat in strategies:
+                for scen in scenarios:
+                    run = simulate(strat, scen, base_params)
+                    state.simulation_runs.append(run)
+                    await self.bus.emit(
+                        event_type="simulation_run",
+                        agent="Supervisor",
+                        payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
+                    )
+
+            return {"status": "simulations_completed", "total_runs": len(state.simulation_runs)}
 
         elif "verification" in task.id:
             await self.bus.emit(
