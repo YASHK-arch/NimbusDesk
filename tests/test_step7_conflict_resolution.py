@@ -163,8 +163,9 @@ def test_simulation_based_resolution():
 
     assert len(resolved) == 1
     assert resolved[0].resolved is True
-    assert len(resolved[0].simulation_ids) == 2
-    assert len(sim_runs) == 2
+    # Evaluates all 3 strategies for Side A and Side B (6 runs total per Fix 3)
+    assert len(resolved[0].simulation_ids) == 6
+    assert len(sim_runs) == 6
     assert "MRR delta" in resolved[0].resolution
     assert "flips below" in resolved[0].resolution
 
@@ -186,5 +187,6 @@ async def test_end_to_end_conflict_resolution_in_workflow():
     )
     assert cfo_growth_conf is not None
     assert cfo_growth_conf.resolved is True
-    assert len(cfo_growth_conf.simulation_ids) == 2
-    assert len(state.simulation_runs) >= 2
+    # Evaluates all 3 strategies for both sides (6 simulation runs)
+    assert len(cfo_growth_conf.simulation_ids) == 6
+    assert len(state.simulation_runs) >= 6

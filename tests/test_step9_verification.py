@@ -19,7 +19,7 @@ def test_verification_all_checks_pass_on_valid_data():
             low=0.01,
             base=0.025,
             high=0.04,
-            unit="%",
+            unit="ratio",
             provenance="external_research",
             source_ref="benchmarks",
         )
@@ -31,7 +31,8 @@ def test_verification_all_checks_pass_on_valid_data():
 
     all_passed, results = verify_workflow(assumptions, [sim_run], company, draft_metrics)
     assert all_passed is True
-    assert len(results) == 5
+    # 6 checks: unit, provenance, ratios, scenario_ordering, required_sections, number_traceability (Fix 5)
+    assert len(results) == 6
     for r in results:
         assert r.status == "passed"
 
@@ -45,7 +46,7 @@ def test_verification_catches_deliberately_corrupted_number():
             low=0.01,
             base=0.025,
             high=0.04,
-            unit="%",
+            unit="ratio",
             provenance="external_research",
             source_ref="benchmarks",
         )

@@ -51,7 +51,8 @@
     "paid_user_cost_per_month": 4.50,
     "free_user_marginal_cost_per_month": 1.20,
     "database_cluster_utilization_pct": 58.0,
-    "max_concurrent_connections_headroom_pct": 42.0
+    "max_concurrent_connections_headroom_pct": 42.0,
+    "max_safe_free_users_without_sharding": 6000
   },
   "funnel": {
     "monthly_unique_visitors": 45000,

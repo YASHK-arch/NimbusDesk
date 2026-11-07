@@ -1,9 +1,18 @@
-"""Simulation-based conflict resolution engine settling agent disputes with deterministic math."""
+"""Simulation-based conflict resolution engine settling agent disputes with deterministic math.
+
+Hard Rules:
+- R3: Conflicts are resolved by simulation and evidence, not by LLMs picking a winner or voting.
+- Resolution text is generated purely from computed simulation outputs, never pre-written.
+- Unresolved material conflicts remain marked resolved = False and status = 'unresolved_material'.
+"""
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
-from simulation.saas_model import STRATEGY_B, STRATEGY_C, simulate
+from report.decision_logic import rank_strategies
+from simulation.params import SIM_PARAMS
+from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from simulation.sensitivity import find_flip_point
 from state.schemas import CompanySnapshot, Conflict, Finding, SimulationRun
 
@@ -12,92 +21,190 @@ def resolve_conflicts_with_simulation(
     conflicts: List[Conflict],
     findings: Dict[str, Finding],
     company: Optional[CompanySnapshot] = None,
+    rebuttal_round: bool = False,
 ) -> Tuple[List[Conflict], List[SimulationRun]]:
     """Resolve detected conflicts by executing simulations for competing agent assumptions.
 
-    Hard Rules:
-    - R3: Conflicts are resolved by simulation and evidence, not by LLMs picking a winner or voting.
-    - Every resolution records the simulation IDs and numerical deltas.
+    Returns:
+        (resolved_conflicts, simulation_runs)
     """
     simulation_runs: List[SimulationRun] = []
-    resolved_conflicts: List[Conflict] = []
+    processed_conflicts: List[Conflict] = []
+
+    # Build baseline parameter dictionary from SIM_PARAMS defaults
+    baseline_params = {name: spec["default"] for name, spec in SIM_PARAMS.items()}
+    # Update with any non-conflicting base values from findings
+    for f in findings.values():
+        for asm in f.assumptions:
+            if asm.name in baseline_params:
+                baseline_params[asm.name] = asm.base
 
     for conflict in conflicts:
-        if conflict.type in ("assumption_divergence", "contradictory_recommendation"):
-            agent_a, agent_b = (conflict.agents[0], conflict.agents[1]) if len(conflict.agents) >= 2 else ("CFO", "Growth")
+        if conflict.type == "assumption_divergence":
+            # Extract disputed parameter name from disputed_item
+            param_match = re.search(r"Non-overlapping bounds on '([^']+)'", conflict.disputed_item)
+            disputed_param = param_match.group(1) if param_match else "free_to_paid_conversion"
+
+            agent_a = conflict.agents[0] if len(conflict.agents) >= 1 else "CFO"
+            agent_b = conflict.agents[1] if len(conflict.agents) >= 2 else "Growth"
+
             finding_a = findings.get(agent_a)
             finding_b = findings.get(agent_b)
 
-            # Build parameter sets from both agents
-            params_a = _extract_agent_params(finding_a, fallback_conversion=0.015)
-            params_b = _extract_agent_params(finding_b, fallback_conversion=0.045)
+            asm_a = next((a for a in (finding_a.assumptions if finding_a else []) if a.name == disputed_param), None)
+            asm_b = next((a for a in (finding_b.assumptions if finding_b else []) if a.name == disputed_param), None)
 
-            # Execute simulation for Side A (e.g. CFO conservative view)
-            run_a = simulate(
-                strategy=STRATEGY_B,
-                scenario=f"conflict_side_{agent_a.lower()}",
-                assumptions=params_a,
-                company=company,
-                months=12,
-            )
-            # Execute simulation for Side B (e.g. Growth optimistic view)
-            run_b = simulate(
-                strategy=STRATEGY_B,
-                scenario=f"conflict_side_{agent_b.lower()}",
-                assumptions=params_b,
-                company=company,
-                months=12,
-            )
-            simulation_runs.extend([run_a, run_b])
+            val_a = asm_a.base if asm_a else baseline_params.get(disputed_param, 0.015)
+            val_b = asm_b.base if asm_b else baseline_params.get(disputed_param, 0.045)
 
-            # Compute numerical outcome deltas
-            mrr_a = run_a.outputs["mrr_month_12"]
-            mrr_b = run_b.outputs["mrr_month_12"]
-            runway_a = run_a.outputs["runway_months_12"]
-            runway_b = run_b.outputs["runway_months_12"]
+            # Start from baseline parameters and change ONLY the disputed parameter
+            params_a = dict(baseline_params)
+            params_a[disputed_param] = val_a
+
+            params_b = dict(baseline_params)
+            params_b[disputed_param] = val_b
+
+            # Run all 3 strategies for both sides
+            runs_a = [
+                simulate(strat, f"conflict_{agent_a.lower()}", params_a, company=company)
+                for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+            ]
+            runs_b = [
+                simulate(strat, f"conflict_{agent_b.lower()}", params_b, company=company)
+                for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+            ]
+            simulation_runs.extend(runs_a + runs_b)
+
+            ranked_a = rank_strategies(runs_a, min_runway=10.0)
+            ranked_b = rank_strategies(runs_b, min_runway=10.0)
+
+            top_a = ranked_a[0]
+            top_b = ranked_b[0]
+
+            # Evaluate decision relevance: does recommended strategy or feasibility differ?
+            recommendation_differs = top_a.strategy != top_b.strategy
+            feasibility_differs = top_a.feasible != top_b.feasible
+            is_decision_relevant = recommendation_differs or feasibility_differs
+
+            verdict = "decision_relevant" if is_decision_relevant else "immaterial"
+            conflict.verdict = verdict
+
+            # Compute deltas for the top strategy
+            mrr_a = top_a.mrr_month_12
+            mrr_b = top_b.mrr_month_12
+            runway_a = top_a.runway_months_12
+            runway_b = top_b.runway_months_12
+            net_contrib_a = top_a.net_contribution_12
+            net_contrib_b = top_b.net_contribution_12
+
             mrr_delta = round(mrr_b - mrr_a, 2)
             runway_delta = round(runway_b - runway_a, 2)
+            contrib_delta = round(net_contrib_b - net_contrib_a, 2)
 
-            # Compute flip point
             flip = find_flip_point(
-                primary_strategy=STRATEGY_B,
-                competing_strategy=STRATEGY_C,
+                primary_strategy=top_a.strategy,
+                competing_strategy=STRATEGY_C if top_a.strategy != STRATEGY_C else STRATEGY_B,
+                parameter_name=disputed_param,
+                base_assumptions=baseline_params,
                 company=company,
             )
 
-            resolution_text = (
-                f"Resolved via parametric simulation runs ({run_a.id} vs {run_b.id}). "
-                f"Under {agent_a}'s conservative parameters, Strategy B achieves ${mrr_a:,.0f} MRR with {runway_a:.1f}mo runway. "
-                f"Under {agent_b}'s parameters, Strategy B achieves ${mrr_b:,.0f} MRR with {runway_b:.1f}mo runway (MRR delta: +${mrr_delta:,.0f}). "
-                f"Simulation proves the decision flips below {flip['threshold_display']} conversion. "
-                f"Resolution: Adopt Strategy B (Usage Caps) with milestone guardrails; runway remains above the 10.0mo safety floor while unlocking upside."
-            )
+            # Check if ranges overlap (e.g. after a rebuttal round)
+            ranges_overlap = False
+            if asm_a and asm_b:
+                ranges_overlap = not ((asm_a.high < asm_b.low) or (asm_b.high < asm_a.low))
+
+            if ranges_overlap:
+                conflict.resolved = True
+                conflict.status = "resolved_converged"
+                conflict.resolution_method = "converged_after_rebuttal"
+                resolution_text = (
+                    f"Dispute on '{disputed_param}' settled: revised assumption ranges overlap. "
+                    f"Consensus parameter space supports {top_a.strategy}."
+                )
+            elif not is_decision_relevant:
+                conflict.resolved = True
+                conflict.status = "resolved_immaterial"
+                conflict.resolution_method = "simulation_immaterial"
+                resolution_text = (
+                    f"Simulation proves disagreement on '{disputed_param}' ({val_a} vs {val_b}) is immaterial: "
+                    f"both parameter sets recommend {top_a.strategy} "
+                    f"(Side {agent_a}: ${net_contrib_a:,.0f} net contribution, {runway_a:.1f}mo runway; "
+                    f"Side {agent_b}: ${net_contrib_b:,.0f} net contribution, {runway_b:.1f}mo runway). "
+                    f"MRR delta: +${mrr_delta:,.0f}, net contribution delta: +${contrib_delta:,.0f}, runway delta: {runway_delta:+.1f}mo. "
+                    f"Simulation proves strategy flips below {flip.get('threshold_display', 'the threshold')} conversion."
+                )
+            else:
+                # Decision relevant and non-overlapping: remains an honest unresolved conflict
+                conflict.resolved = False
+                conflict.status = "unresolved_material"
+                conflict.resolution_method = "unresolved"
+                resolution_text = (
+                    f"Decision-relevant divergence on '{disputed_param}' ({val_a} vs {val_b}): "
+                    f"Under {agent_a}'s assumptions, optimal strategy is {top_a.strategy} "
+                    f"(${mrr_a:,.0f} MRR, {runway_a:.1f}mo runway, feasible: {top_a.feasible}). "
+                    f"Under {agent_b}'s assumptions, optimal strategy is {top_b.strategy} "
+                    f"(${mrr_b:,.0f} MRR, {runway_b:.1f}mo runway, feasible: {top_b.feasible}). "
+                    f"Divergence delta: ${mrr_delta:,.0f} MRR, ${contrib_delta:,.0f} net contribution. "
+                    f"Threshold: strategy dominance flips at {flip.get('threshold_display', 'the modeled threshold')}. "
+                    f"Status remains unresolved pending empirical cohort data."
+                )
 
             conflict.resolution = resolution_text
-            conflict.simulation_ids = [run_a.id, run_b.id]
-            conflict.resolved = True
-            resolved_conflicts.append(conflict)
+            conflict.simulation_ids = [r.id for r in runs_a + runs_b]
+            processed_conflicts.append(conflict)
+
+        elif conflict.type == "contradictory_recommendation":
+            # Direct recommendation clash
+            agent_a = conflict.agents[0] if len(conflict.agents) >= 1 else "CFO"
+            agent_b = conflict.agents[1] if len(conflict.agents) >= 2 else "Risk"
+            finding_a = findings.get(agent_a)
+            finding_b = findings.get(agent_b)
+
+            rec_a = finding_a.recommendation if finding_a else "proceed_with_limits"
+            rec_b = finding_b.recommendation if finding_b else "reject"
+
+            # Execute standard simulation for expected scenario
+            runs = [
+                simulate(strat, "expected", baseline_params, company=company)
+                for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+            ]
+            simulation_runs.extend(runs)
+            ranked = rank_strategies(runs, min_runway=10.0)
+            top = ranked[0]
+
+            is_feasible = top.feasible
+            if is_feasible:
+                verdict = "immaterial" if "proceed" in rec_a or "proceed" in rec_b else "decision_relevant"
+                status = "resolved_immaterial"
+                resolved = True
+                method = "simulation_immaterial"
+            else:
+                verdict = "decision_relevant"
+                status = "unresolved_material"
+                resolved = False
+                method = "unresolved"
+
+            conflict.verdict = verdict
+            conflict.status = status
+            conflict.resolved = resolved
+            conflict.resolution_method = method
+            conflict.simulation_ids = [r.id for r in runs]
+            conflict.resolution = (
+                f"Evaluated opposing recommendations ({agent_a} '{rec_a}' vs {agent_b} '{rec_b}') against simulation runs. "
+                f"Financial model indicates {top.strategy} yields ${top.net_contribution_12:,.0f} net contribution with "
+                f"{top.runway_months_12:.1f}mo runway (feasibility: {top.feasible})."
+            )
+            processed_conflicts.append(conflict)
+
         else:
-            # Other conflicts (e.g. missing evidence or dependency blocks)
-            conflict.resolution = "Recorded as verified limitation; no contradictory simulation required."
+            # missing_evidence or dependency_block
+            conflict.verdict = "immaterial"
+            conflict.status = "resolved_immaterial"
             conflict.resolved = True
-            resolved_conflicts.append(conflict)
+            conflict.resolution_method = "simulation_immaterial"
+            conflict.resolution = "Recorded as verified procedural constraint; no simulation required."
+            conflict.simulation_ids = []
+            processed_conflicts.append(conflict)
 
-    return resolved_conflicts, simulation_runs
-
-
-def _extract_agent_params(finding: Optional[Finding], fallback_conversion: float) -> Dict[str, float]:
-    params = {
-        "free_to_paid_conversion": fallback_conversion,
-        "monthly_free_signups": 3200.0,
-        "free_user_marginal_infra_cost": 1.20,
-        "starter_cannibalization_rate": 0.10,
-        "free_user_monthly_tickets": 0.05,
-    }
-    if not finding:
-        return params
-
-    for asm in finding.assumptions:
-        if asm.name in params:
-            params[asm.name] = asm.base
-    return params
+    return processed_conflicts, simulation_runs

@@ -7,9 +7,10 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
-  Sliders,
+  TrendingUp,
 } from 'lucide-react';
 import { DecisionReport } from '../types';
+import { FlipPointCard } from './FlipPointCard';
 
 interface DecisionReportProps {
   report: DecisionReport | null;
@@ -41,7 +42,7 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
   }
 
   const { sections, recommendation, confidence, disclaimer } = report;
-  const { executive_summary, scenario_table, conflicts, sensitivity_tornado, flip_point, assumption_ledger, risks, verification_summary } = sections;
+  const { executive_summary, scenario_table, outcome_ranges, conflicts, sensitivity_tornado, flip_point, assumption_ledger, risks, verification_summary } = sections;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
@@ -49,12 +50,15 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
       <div className="bg-gradient-to-r from-teal-950/60 to-slate-900 border border-teal-500/40 rounded-xl p-6 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-teal-500/20 pb-4 mb-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono uppercase tracking-wider text-teal-400 font-bold">
                 Final Stress-Test Recommendation
               </span>
               <span className="text-xs px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-mono">
                 Verified: Deterministic Math
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono border border-blue-500/30">
+                {report.llm_mode || "LLM Mode: Mock (deterministic seed)"}
               </span>
             </div>
             <h1 className="text-2xl font-extrabold text-white mt-1">{recommendation}</h1>
@@ -67,31 +71,23 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
             </div>
             <div className="bg-slate-950 px-4 py-2 rounded-lg border border-slate-800 text-center">
               <span className="text-[11px] text-slate-400 uppercase font-mono">Simulations</span>
-              <p className="text-lg font-bold text-slate-100">11 Runs</p>
+              <p className="text-lg font-bold text-slate-100">12 Runs</p>
             </div>
           </div>
         </div>
+
+        {report.degraded_agent_banner && (
+          <div className="bg-amber-950/40 border border-amber-500/50 rounded-lg p-3 my-3 text-xs text-amber-200 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>{report.degraded_agent_banner}</span>
+          </div>
+        )}
 
         <p className="text-sm text-slate-200 leading-relaxed">{executive_summary.headline_thesis}</p>
       </div>
 
       {/* 2. Critical Flip-Point Box */}
-      {flip_point && (
-        <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl p-5 flex items-start gap-4">
-          <div className="bg-amber-500/20 p-2.5 rounded-lg text-amber-400 shrink-0">
-            <Sliders className="w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-amber-300 uppercase tracking-wide">
-              Deterministic Flip-Point Condition
-            </h3>
-            <p className="text-sm text-slate-200 font-medium mt-1">{flip_point.statement}</p>
-            <span className="text-xs text-amber-400/80 mt-1 inline-block">
-              Threshold derived via parametric sensitivity sweep across Strategy B vs Strategy C.
-            </span>
-          </div>
-        </div>
-      )}
+      {flip_point && <FlipPointCard flipPoint={flip_point} />}
 
       {/* 3. Strategy Scenario Comparison Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
@@ -144,6 +140,63 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
         </div>
       </div>
 
+      {/* 3. Outcome Ranges (Monte Carlo Distributions) */}
+      {outcome_ranges && outcome_ranges.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-indigo-400" />
+              <div>
+                <h3 className="text-base font-bold text-white">Outcome Ranges (Monte Carlo Distributions)</h3>
+                <p className="text-xs text-slate-400">
+                  250 iterations across reconciled assumption bounds using triangular sampling (Seed: 42)
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-mono px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-700/50 text-indigo-300">
+              Probabilistic Model
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400">
+                  <th className="py-2.5 px-3">Strategy</th>
+                  <th className="py-2.5 px-3 text-center">Win Prob (p_best)</th>
+                  <th className="py-2.5 px-3 text-center">Feasibility (p_feasible)</th>
+                  <th className="py-2.5 px-3 text-right">MRR (p10 / p50 / p90)</th>
+                  <th className="py-2.5 px-3 text-right">Net Contribution (p10 / p50 / p90)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {outcome_ranges.map((mc, idx) => (
+                  <tr key={idx} className="hover:bg-slate-800/40 transition">
+                    <td className="py-3 px-3 font-medium text-slate-200">{mc.strategy}</td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 px-2 py-0.5 rounded">
+                        {(mc.p_best * 100).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-800/50 px-2 py-0.5 rounded">
+                        {(mc.p_feasible * 100).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-slate-300">
+                      ${Math.round(mc.mrr_month_12_p10).toLocaleString()} / ${Math.round(mc.mrr_month_12_p50).toLocaleString()} / ${Math.round(mc.mrr_month_12_p90).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-slate-100">
+                      ${Math.round(mc.net_contribution_12_p10).toLocaleString()} / ${Math.round(mc.net_contribution_12_p50).toLocaleString()} / ${Math.round(mc.net_contribution_12_p90).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* 4. Conflict Resolution Panel */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
         <div className="flex items-center gap-2">
@@ -180,6 +233,45 @@ export const DecisionReportView: React.FC<DecisionReportProps> = ({
           ))}
         </div>
       </div>
+
+      {/* 4.5 Agent Discussion & Multi-Turn Deliberation */}
+      {sections.discussion_messages && sections.discussion_messages.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-bold text-white">Agent Discussion & Multi-Turn Deliberation</h3>
+              <p className="text-xs text-slate-400">Inter-agent critique and rebuttal protocol before simulation modeling</p>
+            </div>
+            <span className="text-xs px-2.5 py-1 rounded bg-slate-800 text-teal-400 font-mono border border-slate-700">
+              {sections.discussion_messages.length} Messages Exchanged
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {sections.discussion_messages.map((msg, i) => (
+              <div key={i} className="bg-slate-950 border border-slate-800/80 rounded-lg p-3.5 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-teal-300">{msg.sender}</span>
+                    <span className="text-slate-500 font-mono">&rarr;</span>
+                    <span className="text-slate-400 font-medium">{msg.recipient}</span>
+                  </div>
+                  <span className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded border ${
+                    msg.kind === 'critique'
+                      ? 'bg-amber-950/40 text-amber-300 border-amber-800/50'
+                      : msg.kind === 'rebuttal'
+                      ? 'bg-blue-950/40 text-blue-300 border-blue-800/50'
+                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}>
+                    {msg.kind}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">{msg.content}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 5. Sensitivity Tornado Chart */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">

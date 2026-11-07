@@ -17,7 +17,7 @@ def load_company_snapshot(filepath: Optional[Path | str] = None, reload: bool = 
     """Load and validate the synthetic company snapshot."""
     global _CACHED_SNAPSHOT
     if _CACHED_SNAPSHOT is not None and not reload and filepath is None:
-        return _CACHED_SNAPSHOT
+        return _CACHED_SNAPSHOT.model_copy(deep=True)
 
     path = Path(filepath) if filepath else DEFAULT_COMPANY_PATH
     if not path.exists():
@@ -29,7 +29,7 @@ def load_company_snapshot(filepath: Optional[Path | str] = None, reload: bool = 
     snapshot = CompanySnapshot.model_validate(data)
     if filepath is None:
         _CACHED_SNAPSHOT = snapshot
-    return snapshot
+    return snapshot.model_copy(deep=True)
 
 
 def load_seeded_decisions(filepath: Optional[Path | str] = None) -> List[Dict[str, Any]]:

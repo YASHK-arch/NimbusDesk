@@ -204,12 +204,16 @@ export interface DecisionReport {
   confidence: string;
   disclaimer: string;
   synthetic_badge: boolean;
+  llm_mode?: string;
+  degraded_agent_banner?: string;
   sections: {
     executive_summary: {
       recommendation: string;
       confidence: string;
       primary_strategy: string;
       headline_thesis: string;
+      llm_mode?: string;
+      degraded_agent_banner?: string;
     };
     company_position: Record<string, any>;
     scenario_table: Array<{
@@ -223,6 +227,25 @@ export interface DecisionReport {
       net_contribution_12: number;
       net_contribution_24: number;
     }>;
+    outcome_ranges?: Array<{
+      strategy: string;
+      n_iterations: number;
+      seed: number;
+      p_best: number;
+      p_feasible: number;
+      mrr_month_12: { p10: number; p50: number; p90: number };
+      mrr_month_12_p10: number;
+      mrr_month_12_p50: number;
+      mrr_month_12_p90: number;
+      runway_months_12: { p10: number; p50: number; p90: number };
+      runway_months_12_p10: number;
+      runway_months_12_p50: number;
+      runway_months_12_p90: number;
+      net_contribution_12: { p10: number; p50: number; p90: number };
+      net_contribution_12_p10: number;
+      net_contribution_12_p50: number;
+      net_contribution_12_p90: number;
+    }>;
     conflicts: Array<{
       id: string;
       type: string;
@@ -231,6 +254,14 @@ export interface DecisionReport {
       resolved: boolean;
       resolution: string;
       simulation_ids: string[];
+    }>;
+    discussion_messages?: Array<{
+      sender: string;
+      recipient: string;
+      kind: string;
+      content: string;
+      assumptions?: any[];
+      timestamp: string;
     }>;
     sensitivity_tornado: Array<{
       assumption_name: string;
@@ -245,12 +276,18 @@ export interface DecisionReport {
       swing: number;
     }>;
     flip_point: {
+      exists?: boolean;
       primary_strategy: string;
       competing_strategy: string;
       parameter_name: string;
-      threshold: number;
+      threshold: number | null;
       threshold_display: string;
       statement: string;
+      flip_value?: number | null;
+      tested_range?: [number, number];
+      outcome_at_low?: number;
+      outcome_at_high?: number;
+      outcome_at_flip?: number;
     };
     assumption_ledger: Assumption[];
     risks: Array<{ category: string; description: string; mitigation: string }>;

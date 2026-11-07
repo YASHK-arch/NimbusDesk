@@ -141,3 +141,39 @@ def test_flip_point_search():
     assert "Strategy B (Usage Caps)" in flip["statement"]
     assert "Strategy C" in flip["statement"]
     assert "%" in flip["statement"]
+
+
+def test_distinct_scenarios_and_ordering():
+    """Verify distinct parameter bounds across scenarios yield conservative < expected < optimistic on net_contribution_12."""
+    from simulation.params import build_scenario_params
+
+    assumptions = [
+        Assumption(name="free_to_paid_conversion", low=0.012, base=0.025, high=0.045, unit="ratio", provenance="ai_assumption"),
+        Assumption(name="monthly_free_signups", low=2000.0, base=3200.0, high=4500.0, unit="users", provenance="ai_assumption"),
+        Assumption(name="free_user_marginal_infra_cost", low=0.80, base=1.20, high=2.00, unit="USD", provenance="ai_assumption"),
+        Assumption(name="starter_cannibalization_rate", low=0.05, base=0.10, high=0.18, unit="ratio", provenance="ai_assumption"),
+        Assumption(name="free_user_monthly_tickets", low=0.02, base=0.05, high=0.09, unit="tickets/user/mo", provenance="ai_assumption"),
+    ]
+
+    p_cons = build_scenario_params(assumptions, "conservative")
+    p_exp = build_scenario_params(assumptions, "expected")
+    p_opt = build_scenario_params(assumptions, "optimistic")
+
+    # Strategy A & B have free-tier levers and must strictly satisfy conservative < expected < optimistic
+    for strat in [STRATEGY_A, STRATEGY_B]:
+        run_cons = simulate(strat, "conservative", p_cons)
+        run_exp = simulate(strat, "expected", p_exp)
+        run_opt = simulate(strat, "optimistic", p_opt)
+
+        c_nc = run_cons.outputs["net_contribution_12"]
+        e_nc = run_exp.outputs["net_contribution_12"]
+        o_nc = run_opt.outputs["net_contribution_12"]
+
+        assert c_nc < e_nc < o_nc, f"Strategy {strat} ordering failure: {c_nc} < {e_nc} < {o_nc}"
+
+    # Strategy C does not use free-tier levers; satisfies conservative <= expected <= optimistic
+    run_c_cons = simulate(STRATEGY_C, "conservative", p_cons)
+    run_c_exp = simulate(STRATEGY_C, "expected", p_exp)
+    run_c_opt = simulate(STRATEGY_C, "optimistic", p_opt)
+    assert run_c_cons.outputs["net_contribution_12"] <= run_c_exp.outputs["net_contribution_12"] <= run_c_opt.outputs["net_contribution_12"]
+

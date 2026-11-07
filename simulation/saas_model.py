@@ -24,17 +24,12 @@ def simulate(
     assumptions: Dict[str, float],
     company: Optional[CompanySnapshot] = None,
     months: int = 24,
-    seed: int = 42,
+    seed: Optional[int] = None,
 ) -> SimulationRun:
     """Simulate SaaS financial trajectory over 12-24 monthly steps.
 
-    Parameters:
-        strategy: Strategy A, B, or C.
-        scenario: 'conservative', 'expected', 'optimistic', 'stress_test'.
-        assumptions: dictionary of key parameters (conversion, signups, infra, cannibalization).
-        company: baseline company snapshot (defaults to NimbusDesk).
-        months: number of monthly time steps (default 24).
-        seed: stored random seed for determinism.
+    Note: simulate() is purely deterministic based on input assumptions and company parameters.
+    Optional seed is preserved on the SimulationRun record for tracking when called by Monte Carlo.
     """
     if company is None:
         company = load_company_snapshot()
@@ -89,12 +84,22 @@ def simulate(
         effective_conversion *= 0.50
         effective_infra *= 2.0
         effective_cannibalization *= 1.50
+    elif scenario == "stress_infra_doubles":
+        effective_infra *= 2.0
+    elif scenario == "stress_conversion_collapse":
+        effective_conversion *= 0.50
+    elif scenario == "stress_large_customer_churn":
+        # Handled below by reducing initial enterprise customer cohort by 30%
+        pass
 
     # Initial state initialization from company snapshot
     cash = company.cash_balance
     starter_users = next((p.active_customers for p in company.plans if p.plan_name == "Starter"), 600)
     pro_users = next((p.active_customers for p in company.plans if p.plan_name == "Pro"), 350)
     ent_users = next((p.active_customers for p in company.plans if p.plan_name == "Enterprise"), 45)
+
+    if scenario == "stress_large_customer_churn":
+        ent_users = max(1, int(ent_users * 0.70))  # 30% immediate enterprise churn in month 1
 
     starter_price = next((p.price_per_month for p in company.plans if p.plan_name == "Starter"), 49.0)
     pro_price = next((p.price_per_month for p in company.plans if p.plan_name == "Pro"), 199.0)
@@ -161,7 +166,10 @@ def simulate(
         total_monthly_expenses = base_opex + total_infra + total_support_cost
         net_burn = total_monthly_expenses - mrr
         cash -= net_burn
-        runway = (cash / net_burn) if net_burn > 0 else 999.0
+        if cash <= 0:
+            runway = 0.0
+        else:
+            runway = (cash / net_burn) if net_burn > 0 else 999.0
 
         gross_margin = (mrr - total_infra - total_support_cost) / mrr if mrr > 0 else 0.0
         monthly_net_contribution = mrr - total_monthly_expenses
@@ -209,5 +217,5 @@ def simulate(
         scenario=scenario,
         parameters=copy.deepcopy(assumptions),
         outputs=outputs,
-        seed=seed,
+        seed=seed if seed is not None else 0,
     )

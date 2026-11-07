@@ -23,34 +23,8 @@ class RecoveryPolicy:
         await asyncio.sleep(delay)
 
     def create_degraded_fallback_finding(self, task: Task, agent_name: str, error_msg: str) -> Finding:
-        """Construct a safe, conservative degraded-mode Finding when an agent fails permanently."""
-        logger.warning(f"Synthesizing degraded fallback finding for {agent_name} after permanent failure: {error_msg}")
-        return Finding(
-            agent=agent_name,
-            task_id=task.id,
-            claim=f"Degraded Mode: {agent_name} failed ({error_msg}). Standard conservative benchmarks applied.",
-            recommendation="proceed_with_limits",
-            confidence=0.40,  # Lower confidence reflecting degraded mode
-            assumptions=[
-                Assumption(
-                    name="degraded_fallback_margin_safety",
-                    low=0.70,
-                    base=0.85,
-                    high=0.95,
-                    unit="safety_ratio",
-                    provenance="simulated_estimate",
-                    source_ref=f"Supervisor Degraded Mode Rulebook for {agent_name}",
-                    confidence=0.40,
-                    proposed_by="Supervisor_Recovery",
-                )
-            ],
-            evidence=[
-                Evidence(
-                    source_type="calculation",
-                    source_ref="recovery_subsystem",
-                    snippet=f"Primary agent {agent_name} crashed; fallback parameters injected to ensure workflow completion.",
-                )
-            ],
-            limitations=[f"Primary {agent_name} analysis was unavailable; run completed in fault-tolerant degraded mode."],
-            status="ok",
-        )
+        """Construct a safe, conservative degraded-mode Finding using BackupAnalyst when an agent fails permanently."""
+        logger.warning(f"Synthesizing degraded fallback finding via BackupAnalyst for {agent_name} after permanent failure: {error_msg}")
+        from agents.specialists import BackupAnalyst
+        analyst = BackupAnalyst()
+        return analyst.generate_fallback_finding(task.id, failed_agent_name=agent_name)

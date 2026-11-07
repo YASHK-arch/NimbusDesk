@@ -47,6 +47,8 @@ async def test_end_to_end_report_builder_10_sections():
     for row in scenario_table:
         expected_mrr = round(row["mrr_month_12_expected"], 2)
         assert expected_mrr in sim_mrrs, f"Report number {expected_mrr} does not trace to any simulator run"
+        if row["strategy"] in ("Strategy A (Limited Features)", "Strategy B (Usage Caps)"):
+            assert row["mrr_month_12_conservative"] < row["mrr_month_12_expected"] < row["mrr_month_12_optimistic"]
 
     # Verify Markdown rendering
     md = render_report_markdown(report)

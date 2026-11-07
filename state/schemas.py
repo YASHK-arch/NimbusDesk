@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Assumption(BaseModel):
@@ -13,7 +13,7 @@ class Assumption(BaseModel):
     base: float = Field(..., description="Expected / baseline estimate")
     high: float = Field(..., description="Optimistic bound")
     unit: str = Field(..., description="Unit of measurement, e.g. '%', 'USD/user', 'ratio'")
-    provenance: Literal["verified_data", "external_research", "simulated_estimate", "ai_assumption"] = Field(
+    provenance: Literal["verified_data", "external_research", "simulated_estimate", "ai_assumption", "fallback_degraded"] = Field(
         ..., description="Provenance tag tracing source category"
     )
     source_ref: Optional[str] = Field(None, description="Identifier of dataset, document, or calculation reference")
@@ -21,9 +21,17 @@ class Assumption(BaseModel):
     proposed_by: Optional[str] = Field(None, description="Agent identity that introduced the assumption")
     challenged_by_skeptic: bool = Field(False, description="Flag set if Skeptic challenged this assumption")
 
+    @model_validator(mode="after")
+    def validate_bounds_ordering(self) -> "Assumption":
+        if not (self.low <= self.base <= self.high):
+            raise ValueError(
+                f"Assumption '{self.name}' must satisfy low <= base <= high; got low={self.low}, base={self.base}, high={self.high}"
+            )
+        return self
+
 
 class Evidence(BaseModel):
-    source_type: Literal["company_data", "external", "calculation", "benchmark"]
+    source_type: Literal["company_data", "external", "calculation", "benchmark", "contingency_fallback"]
     source_ref: str
     snippet: str
 
@@ -38,6 +46,24 @@ class Finding(BaseModel):
     confidence: float = Field(0.5, ge=0.0, le=1.0)
     limitations: List[str] = Field(default_factory=list)
     status: Literal["ok", "failed", "needs_more_info"] = "ok"
+    degraded: bool = False
+    degraded_reason: Optional[str] = None
+
+
+class FailureInjection(BaseModel):
+    agent: str
+    failure_type: Literal["timeout", "exception", "corrupt_output", "bad_output"] = "exception"
+    persist: bool = False
+    fail_attempts: int = 1
+
+
+class Message(BaseModel):
+    sender: str
+    recipient: str  # agent name or "all"
+    kind: Literal["proposal", "critique", "rebuttal", "query"]
+    content: str
+    assumptions: List[Assumption] = Field(default_factory=list)
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class Decision(BaseModel):
@@ -53,6 +79,16 @@ class Decision(BaseModel):
 class Task(BaseModel):
     id: str
     owner_agent: str
+    kind: Literal[
+        "agent_analysis",
+        "agent_discussion",
+        "conflict_detection",
+        "skeptic_review",
+        "simulation",
+        "report_draft",
+        "verification",
+        "report_finalize",
+    ] = "agent_analysis"
     depends_on: List[str] = Field(default_factory=list)
     status: Literal["pending", "running", "done", "failed", "retrying", "blocked"] = "pending"
     input_ref: Optional[str] = None
@@ -71,6 +107,9 @@ class Conflict(BaseModel):
     resolution: Optional[str] = None
     simulation_ids: List[str] = Field(default_factory=list)
     resolved: bool = False
+    status: Literal["detected", "resolved_immaterial", "resolved_converged", "unresolved_material"] = "detected"
+    verdict: Optional[Literal["decision_relevant", "immaterial"]] = None
+    resolution_method: Optional[Literal["simulation_immaterial", "converged_after_rebuttal", "unresolved"]] = None
 
 
 class SimulationRun(BaseModel):
@@ -104,6 +143,7 @@ class WorkflowEvent(BaseModel):
         "task_created",
         "agent_started",
         "finding_posted",
+        "message_posted",
         "conflict_detected",
         "simulation_run",
         "agent_failed",
