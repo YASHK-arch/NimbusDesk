@@ -13,7 +13,7 @@ import sqlite3
 from typing import Any, Dict, List, Optional
 
 from state.shared_state import WorkflowState
-from orchestrator.db import CheckpointModel, SessionFactory, engine, _IS_SQLITE, init_db
+from orchestrator.db import CheckpointModel, SessionFactory, engine, _IS_SQLITE, _SQLA_AVAILABLE, init_db
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "checkpoints.sqlite"
 
@@ -22,7 +22,7 @@ class CheckpointStore:
     def __init__(self, db_path: Optional[Path | str] = None) -> None:
         # If an explicit db_path is given (e.g. in tests), force local SQLite for isolation
         self.explicit_sqlite_path = Path(db_path) if db_path else None
-        self.use_hosted_db = self.explicit_sqlite_path is None and not _IS_SQLITE
+        self.use_hosted_db = self.explicit_sqlite_path is None and not _IS_SQLITE and _SQLA_AVAILABLE
 
         if self.explicit_sqlite_path:
             self.explicit_sqlite_path.parent.mkdir(parents=True, exist_ok=True)
