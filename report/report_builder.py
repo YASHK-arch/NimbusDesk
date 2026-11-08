@@ -47,7 +47,7 @@ def build_consolidated_report(
     degraded_agent_banner = None
     if degraded_agents:
         degraded_agent_banner = (
-            f"WARNING: Analysis from {', '.join(degraded_agents)} failed; "
+            f"Status: Degraded (verified). WARNING: Analysis from {', '.join(degraded_agents)} failed; "
             "conservative fallback assumptions were used. Recommendation confidence is capped at Low."
         )
     unresolved_conflicts = [c for c in state.conflicts if not c.resolved]
@@ -322,6 +322,7 @@ def build_consolidated_report(
         "degraded_agent_banner": degraded_agent_banner,
         "sections": {
             "executive_summary": {
+                "status": "Degraded (verified)" if degraded_agents else "Healthy (verified)",
                 "recommendation": recommendation,
                 "confidence": confidence_level,
                 "confidence_score": confidence_data["score"],

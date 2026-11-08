@@ -376,8 +376,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.022,
                     unit="ratio",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -389,8 +389,8 @@ class BackupAnalyst(BaseAgent):
                     high=3500.0,
                     unit="users",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -403,8 +403,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.30,
                     unit="ratio",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -417,8 +417,8 @@ class BackupAnalyst(BaseAgent):
                     high=3.00,
                     unit="USD",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -431,8 +431,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.15,
                     unit="tickets/user/mo",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -445,8 +445,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.05,
                     unit="ratio",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.30,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -456,7 +456,7 @@ class BackupAnalyst(BaseAgent):
             task_id=task_id,
             claim=f"Conservative fallback assumptions provided for {disputed_area} with high uncertainty bounds due to failed {failed_agent_name} analysis.",
             recommendation="proceed_with_limits",
-            confidence=0.35,
+            confidence=0.25,
             assumptions=assumptions,
             evidence=[
                 Evidence(

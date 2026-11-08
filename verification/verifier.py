@@ -72,13 +72,24 @@ def verify_workflow(
         )
 
     # Check 2: Provenance Tag Integrity & Snapshot Tie-outs
-    valid_provenances = {"verified_data", "external_research", "simulated_estimate", "ai_assumption"}
+    valid_provenances = {
+        "verified_data",
+        "external_research",
+        "simulated_estimate",
+        "ai_assumption",
+        "fallback_degraded",
+    }
     prov_failures: List[str] = []
     for asm in assumptions:
         if asm.provenance not in valid_provenances:
             prov_failures.append(f"{asm.name}: invalid provenance tag '{asm.provenance}'")
         elif not asm.source_ref:
             prov_failures.append(f"{asm.name}: missing source_ref")
+        elif asm.provenance == "fallback_degraded":
+            if asm.confidence > 0.30:
+                prov_failures.append(f"{asm.name}: fallback_degraded confidence must be <= 0.30 (got {asm.confidence})")
+            elif not asm.source_ref:
+                prov_failures.append(f"{asm.name}: missing source_ref for fallback_degraded")
         elif asm.provenance == "verified_data":
             if not asm.source_ref.startswith("data/synthetic_company.json#"):
                 prov_failures.append(f"{asm.name}: verified_data must reference data/synthetic_company.json#<path>")
