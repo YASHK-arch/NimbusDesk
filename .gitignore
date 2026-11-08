@@ -8,7 +8,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
-dist/
+/dist/
 build/
 *.egg-info/
 
@@ -19,6 +19,8 @@ build/
 # Node / Frontend
 ui/node_modules/
 ui/build/
+!ui/dist/
+!ui/dist/**
 
 # Database / Runtime artifacts
 *.sqlite

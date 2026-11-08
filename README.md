@@ -162,19 +162,23 @@ Execute **The One-Minute Acceptance Test Suite**:
 ```
 
 ### 4. Launch Application
-Launch the unified FastAPI server (serves both API and the interactive React frontend):
+Launch the unified FastAPI server (serves both the API and the interactive React Simulation Workspace frontend):
 ```bash
 .venv/bin/uvicorn api.app:app --reload --port 8000
 ```
 Open your browser at:
-- **Interactive Web App:** `http://localhost:8000/`
+- **Interactive Web App (Primary Endpoint):** `http://localhost:8000/`
 - **Swagger API Docs:** `http://localhost:8000/docs`
+
+> **Note on Endpoints & Distribution:**
+> - **Unified Production Endpoint:** `http://localhost:8000/` is the single official application endpoint. The pre-built production frontend is bundled in `ui/dist` and served directly by FastAPI. Zero Node.js installation is required to run the full application!
+> - **Frontend Development (HMR):** For live frontend development with Vite hot-reloading, run `cd ui && npm run dev` on `http://localhost:5173/`, which proxies all API calls to `http://localhost:8000`. Both endpoints serve the identical VentureTwin Simulation Workspace.
 
 ---
 
 ## 🎬 Demo Walkthrough
 
-Follow the 3-minute hackathon judge demo script in [docs/DEMO_SCRIPT.md](file:///Users/omrajput/Desktop/Projects/Citadel-engine/docs/DEMO_SCRIPT.md):
+Follow the 3-minute hackathon judge demo script in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md):
 1. **Decision Console:** Inspect NimbusDesk metrics ($144k MRR, 12.6mo runway).
 2. **Stress-Test:** Click chip `"Should we launch a free plan?"`.
 3. **Watch DAG:** 5 specialist agents run concurrently.
