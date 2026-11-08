@@ -17,25 +17,6 @@ import {
 } from 'recharts';
 import type { AssistantMessage, IntelFeedItem, SimulationScenario } from '../../types';
 
-// ─── Demo canned responses ────────────────────────────────────────────────────
-
-function getDemoResponse(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('summarize') || lower.includes('result')) {
-    return '[Demo Response] The simulation shows three scenarios for MRR at the 12-month mark:\n\n• **Pessimistic (18.8%):** ~$144.5k MRR — driven by low conversion & high churn.\n• **Realistic (59.6%):** ~$157.2k MRR — baseline assumptions hold.\n• **Optimistic (20.9%):** ~$172.8k MRR — better-than-expected conversion.\n\nThe free-to-paid conversion rate is the dominant swing factor.';
-  }
-  if (lower.includes('cost') || lower.includes('driver') || lower.includes('expense')) {
-    return '[Demo Response] The top cost drivers are:\n\n1. **Salary Increase** (2.5-4%): Largest absolute OpEx impact.\n2. **Infra Cost per Free User** ($1.0-1.5/mo): Scales linearly with free signups.\n3. **Support Cost per Ticket** ($10-20): Non-linear; free users generate more tickets.\n\nConsider setting a 500-user free cap to bound infra exposure.';
-  }
-  if (lower.includes('scenario') || lower.includes('compare')) {
-    return '[Demo Response] The key difference between Pessimistic and Optimistic is conversion rate. At 1.0% conversion (CFO floor), MRR stays near $144k. At 3.5% conversion (Growth estimate), MRR reaches $173k. The flip-point is at **1.85% conversion** — below this, free plan cannibalization costs exceed revenue gains.';
-  }
-  if (lower.includes('risk')) {
-    return '[Demo Response] Top risks identified:\n\n1. Conversion below 1.85% → free plan NPV negative\n2. Free churn above 15% → user base too small to convert\n3. Support team capacity: at 500 free users, tickets spike 15% above capacity\n\nRecommendation: Gate the free plan at 500 seats initially.';
-  }
-  return '[Demo Response] I can analyze simulation results, compare scenarios, and explain business drivers. Try asking me to summarize results, explain cost drivers, compare scenarios, or investigate risks.';
-}
-
 // ─── Severity styling ─────────────────────────────────────────────────────────
 
 const SEVERITY_COLORS: Record<IntelFeedItem['severity'], string> = {
@@ -348,7 +329,5 @@ export const DecisionAssistantPanel: React.FC<DecisionAssistantPanelProps> = ({
   );
 };
 
-// ─── Export getDemoResponse for use in SimulationWorkspace ────────────────────
 
-export { getDemoResponse };
 

@@ -123,6 +123,9 @@ def run_monte_carlo_suite(
         p_feasible = round(strat_feasible_count[s] / n_iterations, 4)
         p_best = round(strat_best_count[s] / n_iterations, 4)
 
+        mrr_counts, mrr_edges = np.histogram(strat_mrr[s], bins=10)
+        net_counts, net_edges = np.histogram(strat_net[s], bins=10)
+
         summaries[s] = {
             "strategy": s,
             "n_iterations": n_iterations,
@@ -143,6 +146,16 @@ def run_monte_carlo_suite(
                 "p10": round(float(np.percentile(strat_net[s], 10)), 2),
                 "p50": round(float(np.percentile(strat_net[s], 50)), 2),
                 "p90": round(float(np.percentile(strat_net[s], 90)), 2),
+            },
+            "histograms": {
+                "mrr_month_12": {
+                    "bins": [round(float(x), 2) for x in mrr_edges],
+                    "counts": [int(x) for x in mrr_counts],
+                },
+                "net_contribution_12": {
+                    "bins": [round(float(x), 2) for x in net_edges],
+                    "counts": [int(x) for x in net_counts],
+                },
             },
         }
 

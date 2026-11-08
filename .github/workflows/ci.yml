@@ -51,6 +51,10 @@ jobs:
         working-directory: ui
         run: npm ci
 
+      - name: Verify No Fake Numbers
+        working-directory: ui
+        run: npm run check:fake-numbers
+
       - name: Build Frontend Application
         working-directory: ui
         run: npm run build

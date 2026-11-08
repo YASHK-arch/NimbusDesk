@@ -70,11 +70,9 @@ export const SimulationContextBar: React.FC<SimulationContextBarProps> = ({
   const years = [2023, 2024, 2025, 2026, 2027];
   const periods = ['Full Year', 'Q1', 'Q2', 'Q3', 'Q4'];
 
-  // Compound projections preview based on selected year
+  // Horizon calculations based on selected year
   const yearDelta = tempYear - 2024;
-  const growthRate = 1.16; // 16% CAGR
-  const compoundMultiplier = Math.pow(growthRate, Math.max(0, yearDelta));
-  const previewMRR = Math.round(157200 * compoundMultiplier);
+  const currentMRR = company?.mrr ?? 0;
 
   return (
     <div className="h-10 bg-white border-b border-gray-200 flex items-center px-4 gap-4 shrink-0 relative z-30 select-none">
@@ -181,11 +179,11 @@ export const SimulationContextBar: React.FC<SimulationContextBarProps> = ({
               />
             </div>
 
-            {/* Impact Calculation Preview */}
+            {/* Real Snapshot & Horizon Context */}
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 mb-3 text-xs">
               <div className="flex items-center gap-1.5 text-slate-700 font-semibold mb-1">
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Model Impact Preview ({tempYear})</span>
+                <span>Simulation Horizon ({tempYear})</span>
               </div>
               <div className="flex justify-between text-slate-500 text-[11px] mb-1">
                 <span>Baseline Horizon:</span>
@@ -194,9 +192,9 @@ export const SimulationContextBar: React.FC<SimulationContextBarProps> = ({
                 </span>
               </div>
               <div className="flex justify-between text-slate-500 text-[11px]">
-                <span>Projected Realistic MRR:</span>
+                <span>Current Baseline MRR:</span>
                 <span className="font-semibold text-emerald-600">
-                  ${(previewMRR / 1000).toFixed(1)}k/mo
+                  ${(currentMRR / 1000).toFixed(1)}k/mo
                 </span>
               </div>
             </div>

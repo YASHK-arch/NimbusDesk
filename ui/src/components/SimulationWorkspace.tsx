@@ -3,7 +3,7 @@ import { WorkspaceToolbar } from './workspace/WorkspaceToolbar';
 import { SimulationContextBar } from './workspace/SimulationContextBar';
 import { DriversPanel } from './workspace/DriversPanel';
 import { SimulationResultsPanel } from './workspace/SimulationResultsPanel';
-import { DecisionAssistantPanel, getDemoResponse } from './workspace/DecisionAssistantPanel';
+import { DecisionAssistantPanel } from './workspace/DecisionAssistantPanel';
 import { WorkspaceModal, WorkspaceModalTab } from './workspace/WorkspaceModal';
 import { WorkspaceToast, ToastMessage } from './workspace/WorkspaceToast';
 import type {
@@ -23,81 +23,56 @@ import type {
 // ─── Driver defaults (synthetic/demo baseline) ────────────────────────────────
 
 const DRIVER_DEFAULTS: Driver[] = [
-  // General
+  // Growth & Acquisition
   {
-    id: 'inflation', name: 'Inflation', group: 'General',
-    low: 4, high: 6, unit: '%', distribution: 'Normal',
-    baselineLow: 4, baselineHigh: 6,
-    tooltip: 'General inflation rate affecting operating costs',
-  },
-  // Net Revenue
-  {
-    id: 'price_increase', name: 'Price Increase', group: 'Net Revenue',
-    low: 1, high: 5, unit: '%', distribution: 'Normal',
-    baselineLow: 1, baselineHigh: 5,
-    tooltip: 'Expected annual price increase for paid plans',
+    id: 'free_to_paid_conversion', name: 'Free-to-Paid Conversion', group: 'Growth & Acquisition',
+    low: 0.015, high: 0.045, unit: 'ratio', distribution: 'Triangular',
+    baselineLow: 0.015, baselineHigh: 0.045,
+    tooltip: 'Monthly conversion rate from active free cohort to paid Starter/Pro tiers.',
   },
   {
-    id: 'gdp_growth', name: 'GDP Growth', group: 'Net Revenue',
-    low: 3.1, high: 4.5, unit: '%', distribution: 'Normal',
-    baselineLow: 3.1, baselineHigh: 4.5,
-    tooltip: 'Macro GDP growth; affects buyer confidence',
+    id: 'monthly_free_signups', name: 'Monthly Free Signups', group: 'Growth & Acquisition',
+    low: 1500, high: 4500, unit: 'users', distribution: 'Triangular',
+    baselineLow: 1500, baselineHigh: 4500,
+    tooltip: 'Monthly new organic and viral signups joining the free tier.',
+  },
+  // Infrastructure & Operations
+  {
+    id: 'free_user_marginal_infra_cost', name: 'Free User Marginal Infra Cost', group: 'Infrastructure & Operations',
+    low: 0.80, high: 1.60, unit: 'USD', distribution: 'Triangular',
+    baselineLow: 0.80, baselineHigh: 1.60,
+    tooltip: 'Marginal compute, DB connections, and storage cost per free user per month.',
   },
   {
-    id: 'discounts', name: 'Discounts', group: 'Net Revenue',
-    low: 0, high: 5, unit: '%', distribution: 'Normal',
-    baselineLow: 0, baselineHigh: 5,
-    tooltip: 'Revenue discounts applied to new and renewal contracts',
+    id: 'free_user_monthly_tickets', name: 'Free User Monthly Tickets', group: 'Support & Service',
+    low: 0.02, high: 0.08, unit: 'tickets/user/mo', distribution: 'Triangular',
+    baselineLow: 0.02, baselineHigh: 0.08,
+    tooltip: 'Average support ticket volume submitted per active free user per month.',
   },
-  // Operating Expenses
+  // Pricing & Retention
   {
-    id: 'salary_increase', name: 'Salary Increase', group: 'Operating Expenses',
-    low: 2.5, high: 4, unit: '%', distribution: 'Normal',
-    baselineLow: 2.5, baselineHigh: 4,
-    tooltip: 'Annual salary increase for all headcount',
-  },
-  {
-    id: 'infra_cost_per_user', name: 'Infra Cost per User', group: 'Operating Expenses',
-    low: 1.0, high: 1.5, unit: 'USD', distribution: 'Normal',
-    baselineLow: 1.0, baselineHigh: 1.5,
-    tooltip: 'AWS marginal cost per active free user per month',
+    id: 'starter_cannibalization_rate', name: 'Starter Cannibalization Rate', group: 'Pricing & Retention',
+    low: 0.05, high: 0.15, unit: 'ratio', distribution: 'Triangular',
+    baselineLow: 0.05, baselineHigh: 0.15,
+    tooltip: 'Share of existing paying Starter accounts that downgrade to free tier.',
   },
   {
-    id: 'support_cost_per_ticket', name: 'Support Cost per Ticket', group: 'Operating Expenses',
-    low: 10, high: 20, unit: 'USD', distribution: 'Normal',
-    baselineLow: 10, baselineHigh: 20,
-    tooltip: 'All-in cost per support ticket (rep time + tooling)',
-  },
-  // Free Plan
-  {
-    id: 'monthly_free_signups', name: 'Monthly Free Sign-ups', group: 'Free Plan',
-    low: 200, high: 800, unit: 'users', distribution: 'Normal',
-    baselineLow: 200, baselineHigh: 800,
-    tooltip: 'Estimated new free-tier sign-ups per month after launch',
+    id: 'price_elasticity_starter', name: 'Starter Price Elasticity', group: 'Pricing & Retention',
+    low: 0.40, high: 0.90, unit: 'ratio', distribution: 'Triangular',
+    baselineLow: 0.40, baselineHigh: 0.90,
+    tooltip: 'Price elasticity of demand for Starter plan subscribers.',
   },
   {
-    id: 'free_to_paid_conversion', name: 'Free-to-Paid Conversion', group: 'Free Plan',
-    low: 1.0, high: 3.5, unit: '%', distribution: 'Normal',
-    baselineLow: 1.0, baselineHigh: 3.5,
-    tooltip: 'CFO: 1.0–2.2%  |  Growth: 3.5–6.5%  |  Flip-point: 1.85%',
+    id: 'expansion_revenue_rate', name: 'Expansion Revenue Rate', group: 'Growth & Expansion',
+    low: 0.05, high: 0.12, unit: 'ratio', distribution: 'Triangular',
+    baselineLow: 0.05, baselineHigh: 0.12,
+    tooltip: 'Monthly expansion and upsell revenue rate from existing paid accounts.',
   },
   {
-    id: 'paid_churn', name: 'Paid Customer Churn', group: 'Free Plan',
-    low: 1.5, high: 3.5, unit: '%', distribution: 'Normal',
-    baselineLow: 1.5, baselineHigh: 3.5,
-    tooltip: 'Monthly churn rate for existing paid customers',
-  },
-  {
-    id: 'free_churn', name: 'Free-User Churn', group: 'Free Plan',
-    low: 5, high: 15, unit: '%', distribution: 'Normal',
-    baselineLow: 5, baselineHigh: 15,
-    tooltip: 'Monthly churn rate for free-tier users',
-  },
-  {
-    id: 'cannibalization', name: 'Paid Cannibalization', group: 'Free Plan',
-    low: 0.5, high: 3, unit: '%', distribution: 'Normal',
-    baselineLow: 0.5, baselineHigh: 3,
-    tooltip: 'Percentage of paid customers who downgrade to free tier',
+    id: 'contraction_risk_rate', name: 'Contraction Risk Rate', group: 'Risk & Churn',
+    low: 0.02, high: 0.06, unit: 'ratio', distribution: 'Triangular',
+    baselineLow: 0.02, baselineHigh: 0.06,
+    tooltip: 'Monthly contraction risk or downgrade rate.',
   },
 ];
 
@@ -158,40 +133,48 @@ function scenariosFromReport(report: DecisionReport): SimulationScenario[] {
   const realistic = rows[Math.floor(rows.length / 2)] ?? rows[0];
   const optimistic = rows[rows.length - 1];
 
-  const totalProb = 100;
+  const primaryStrat = report.sections.executive_summary?.primary_strategy;
+  const outcomeRange = report.sections.outcome_ranges?.find((o) => o.strategy === primaryStrat)
+    || report.sections.outcome_ranges?.[0];
+
+  const pFeasible = outcomeRange ? Math.round(outcomeRange.p_feasible * 100) : 75;
+  const pRisk = Math.max(0, 100 - pFeasible);
+  const pOptimistic = outcomeRange ? Math.round(outcomeRange.p_best * 100) : 25;
+  const pRealistic = Math.max(0, 100 - pRisk - pOptimistic);
+
   return [
     {
       name: 'pessimistic',
       label: 'Pessimistic',
-      probability: 18.8,
+      probability: pRisk,
       value: conservative.mrr_month_12_conservative,
       rangeMin: conservative.mrr_month_12_conservative * 0.95,
       rangeMax: conservative.mrr_month_12_expected,
       color: '#f43f5e',
       accentClass: 'border-rose-400',
-      driverAverages: { inflation: 5.5 },
+      driverAverages: {},
     },
     {
       name: 'realistic',
       label: 'Realistic',
-      probability: totalProb - 18.8 - 20.9,
+      probability: pRealistic,
       value: realistic.mrr_month_12_expected,
       rangeMin: realistic.mrr_month_12_conservative,
       rangeMax: realistic.mrr_month_12_optimistic,
       color: '#7c3aed',
       accentClass: 'border-violet-500',
-      driverAverages: { inflation: 5.0 },
+      driverAverages: {},
     },
     {
       name: 'optimistic',
       label: 'Optimistic',
-      probability: 20.9,
+      probability: pOptimistic,
       value: optimistic.mrr_month_12_optimistic,
       rangeMin: optimistic.mrr_month_12_expected,
       rangeMax: optimistic.mrr_month_12_optimistic * 1.05,
       color: '#10b981',
       accentClass: 'border-emerald-500',
-      driverAverages: { inflation: 4.5 },
+      driverAverages: {},
     },
   ];
 }
@@ -599,40 +582,32 @@ export const SimulationWorkspace: React.FC<SimulationWorkspaceProps> = ({
       setIsAssistantLoading(true);
 
       try {
-        if (report) {
-          const resp = await fetch('/api/decisions', {
+        if (report?.decision_id) {
+          const askResp = await fetch(`/api/decisions/${report.decision_id}/ask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              question: `${content} (Simulation context: output=${outputVariable}, year=${forecastYear}, scenario=${selectedScenario ?? 'all'})`,
-            }),
+            body: JSON.stringify({ question: content }),
           });
-          if (resp.ok) {
-            const data = await resp.json();
-            await new Promise((r) => setTimeout(r, 800));
-            const repResp = await fetch(`/api/decisions/${data.decision_id}/report`);
-            if (repResp.ok) {
-              const repData: DecisionReport = await repResp.json();
-              const assistantMsg: AssistantMessage = {
-                id: makeId(),
-                role: 'assistant',
-                content: repData.sections.executive_summary.headline_thesis,
-                ts: new Date().toISOString(),
-              };
-              setMessages((prev) => [...prev, assistantMsg]);
-              setIsAssistantLoading(false);
-              return;
-            }
+          if (askResp.ok) {
+            const askData = await askResp.json();
+            const assistantMsg: AssistantMessage = {
+              id: makeId(),
+              role: 'assistant',
+              content: askData.answer,
+              ts: new Date().toISOString(),
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setIsAssistantLoading(false);
+            return;
           }
         }
-        await new Promise((r) => setTimeout(r, 600));
-        const demoReply: AssistantMessage = {
+        const assistantMsg: AssistantMessage = {
           id: makeId(),
           role: 'assistant',
-          content: getDemoResponse(content),
+          content: 'Please submit a decision inquiry or run the multi-agent simulation workflow to receive grounded analysis.',
           ts: new Date().toISOString(),
         };
-        setMessages((prev) => [...prev, demoReply]);
+        setMessages((prev) => [...prev, assistantMsg]);
       } catch (err) {
         const errMsg: AssistantMessage = {
           id: makeId(),
@@ -660,41 +635,7 @@ export const SimulationWorkspace: React.FC<SimulationWorkspaceProps> = ({
     handleSendMessage('Please explain the simulation results, scenario differences, and trade-offs for NimbusDesk.');
   }, [handleSendMessage]);
 
-  const activeScenarios = simulationResult?.scenarios ?? [
-    {
-      name: 'pessimistic',
-      label: 'Pessimistic',
-      probability: 18.8,
-      value: 144500,
-      rangeMin: 136000,
-      rangeMax: 150000,
-      color: '#f43f5e',
-      accentClass: 'border-rose-400',
-      driverAverages: { inflation: 5.5 },
-    },
-    {
-      name: 'realistic',
-      label: 'Realistic',
-      probability: 59.6,
-      value: 157200,
-      rangeMin: 150000,
-      rangeMax: 165000,
-      color: '#7c3aed',
-      accentClass: 'border-violet-500',
-      driverAverages: { inflation: 5.0 },
-    },
-    {
-      name: 'optimistic',
-      label: 'Optimistic',
-      probability: 20.9,
-      value: 172800,
-      rangeMin: 165000,
-      rangeMax: 185000,
-      color: '#10b981',
-      accentClass: 'border-emerald-500',
-      driverAverages: { inflation: 4.5 },
-    },
-  ];
+  const activeScenarios = simulationResult?.scenarios ?? [];
 
   return (
     <div className={`h-screen w-screen flex flex-col ${theme === 'dark' ? 'bg-slate-950 text-white' : 'bg-white text-gray-900'} overflow-hidden select-none`}>

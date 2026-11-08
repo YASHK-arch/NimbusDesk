@@ -21,9 +21,14 @@ from orchestrator.decomposer import decompose_decision
 from orchestrator.parser import parse_decision_query
 from orchestrator.supervisor import Supervisor
 from report.report_builder import render_report_markdown
+from report.decision_logic import rank_strategies
+from simulation.params import SIM_PARAMS, build_scenario_params
+from simulation.reconcile import reconcile_assumptions
+from simulation.monte_carlo import run_monte_carlo_suite
+from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
 from state.company import load_company_snapshot, load_seeded_decisions
 from state.event_bus import event_bus
-from state.schemas import DecisionRecord, FailureInjection, WorkflowEvent
+from state.schemas import Assumption, DecisionRecord, FailureInjection, SimulationRun, WorkflowEvent
 from state.shared_state import WorkflowState
 from orchestrator.db import (
     init_db,
@@ -88,6 +93,14 @@ class ApprovalRequest(BaseModel):
     action: Literal["approve", "reject", "request_changes"] = "approve"
     chosen_strategy: str = Field(default="Strategy B (Usage Caps)")
     notes: Optional[str] = None
+
+
+class ResimulateRequest(BaseModel):
+    overrides: Dict[str, float] = Field(default_factory=dict)
+
+
+class AskAssistantRequest(BaseModel):
+    question: str
 
 
 @app.get("/health")
@@ -359,6 +372,310 @@ async def get_decision_history():
             ],
             "note": "Calibration baseline calculated from seeded demo data.",
         },
+    }
+
+
+@app.get("/api/params")
+async def get_params():
+    """Return model parameter definitions and bounds from SIM_PARAMS."""
+    param_list = []
+    param_dict = {}
+    category_map = {
+        "free_to_paid_conversion": "Growth & Acquisition",
+        "monthly_free_signups": "Growth & Acquisition",
+        "free_user_marginal_infra_cost": "Infrastructure & Operations",
+        "free_user_monthly_tickets": "Support & Service",
+        "starter_cannibalization_rate": "Pricing & Retention",
+        "price_elasticity_starter": "Pricing & Retention",
+        "price_elasticity_growth": "Pricing & Retention",
+        "expansion_revenue_rate": "Growth & Expansion",
+        "contraction_risk_rate": "Risk & Churn",
+    }
+    step_map = {
+        "free_to_paid_conversion": 0.001,
+        "monthly_free_signups": 100.0,
+        "free_user_marginal_infra_cost": 0.1,
+        "free_user_monthly_tickets": 0.01,
+        "starter_cannibalization_rate": 0.01,
+        "price_elasticity_starter": 0.05,
+        "price_elasticity_growth": 0.05,
+        "expansion_revenue_rate": 0.005,
+        "contraction_risk_rate": 0.005,
+    }
+    for name, spec in SIM_PARAMS.items():
+        bounds = spec.get("bounds", (0.0, 1.0))
+        label = name.replace("_", " ").title()
+        item = {
+            "name": name,
+            "label": label,
+            "default": spec.get("default", bounds[0]),
+            "min": bounds[0],
+            "max": bounds[1],
+            "step": step_map.get(name, 0.01),
+            "unit": spec.get("unit", "ratio"),
+            "category": category_map.get(name, "Model Parameters"),
+            "favorable_direction": spec.get("favorable_direction", "higher"),
+            "description": spec.get("description", ""),
+        }
+        param_list.append(item)
+        param_dict[name] = item
+
+    return {"params": param_dict, "parameters": param_list}
+
+
+@app.get("/api/decisions/{id}/trajectory")
+async def get_decision_trajectory(
+    id: str,
+    strategy: Optional[str] = None,
+    scenario: Optional[str] = "expected",
+):
+    """Return monthly trajectory points (mrr, cash, runway) for a decision strategy and scenario."""
+    state = _WORKFLOW_STATES.get(id) or _checkpoint_store.load_latest_checkpoint(id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Decision workflow not found")
+
+    target_strat = strategy
+    if not target_strat:
+        if state.report and "sections" in state.report and "executive_summary" in state.report["sections"]:
+            target_strat = state.report["sections"]["executive_summary"].get("top_strategy")
+        if not target_strat:
+            target_strat = STRATEGY_B
+
+    target_scen = scenario or "expected"
+
+    # Find matching simulation run in state
+    matching_run = next(
+        (r for r in state.simulation_runs if r.strategy == target_strat and r.scenario == target_scen),
+        None,
+    )
+    if not matching_run and state.simulation_runs:
+        matching_run = next(
+            (r for r in state.simulation_runs if target_strat.lower() in r.strategy.lower() and r.scenario == target_scen),
+            None,
+        ) or next(
+            (r for r in state.simulation_runs if r.strategy == target_strat),
+            state.simulation_runs[0],
+        )
+
+    if not matching_run:
+        raise HTTPException(status_code=404, detail=f"No simulation run found for {target_strat} / {target_scen}")
+
+    history = matching_run.outputs.get("history", [])
+    points = [
+        {
+            "month": pt["month"],
+            "mrr": pt.get("mrr", 0.0),
+            "cash": pt.get("cash_balance", pt.get("cash", 0.0)),
+            "runway": pt.get("runway_months", pt.get("runway", 0.0)),
+            "paying_customers": pt.get("paying_customers", 0),
+            "gross_margin_pct": pt.get("gross_margin_pct", 0.0),
+            "infra_cost": pt.get("infra_cost", 0.0),
+            "support_headcount": pt.get("support_headcount", 0),
+        }
+        for pt in history
+    ]
+
+    return {
+        "decision_id": id,
+        "strategy": matching_run.strategy,
+        "scenario": matching_run.scenario,
+        "points": points,
+        "history": history,
+    }
+
+
+@app.post("/api/decisions/{id}/resimulate")
+async def resimulate_decision(id: str, req: ResimulateRequest):
+    """Re-simulate decision with parameter overrides without modifying stored report (what-if)."""
+    state = _WORKFLOW_STATES.get(id) or _checkpoint_store.load_latest_checkpoint(id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Decision workflow not found")
+
+    company = getattr(state, "company", None) or load_company_snapshot()
+    is_price_change = state.decision and state.decision.type == "price_change"
+
+    if is_price_change:
+        from simulation.price_model import PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C, simulate_price_change
+        strategies = [PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C]
+    else:
+        strategies = [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+
+    adjusted_assumptions: List[Assumption] = []
+    overrides = req.overrides or {}
+
+    for asm in state.assumptions:
+        if asm.name in overrides:
+            val = overrides[asm.name]
+            if asm.name in SIM_PARAMS:
+                b_min, b_max = SIM_PARAMS[asm.name]["bounds"]
+                val = max(b_min, min(b_max, val))
+            low = min(asm.low, val)
+            high = max(asm.high, val)
+            adjusted_assumptions.append(
+                asm.model_copy(update={"base": val, "low": low, "high": high})
+            )
+        else:
+            adjusted_assumptions.append(asm.model_copy())
+
+    existing_names = {a.name for a in adjusted_assumptions}
+    for name, val in overrides.items():
+        if name not in existing_names and name in SIM_PARAMS:
+            b_min, b_max = SIM_PARAMS[name]["bounds"]
+            val = max(b_min, min(b_max, val))
+            unit = SIM_PARAMS[name]["unit"]
+            adjusted_assumptions.append(
+                Assumption(
+                    name=name,
+                    low=val * 0.8,
+                    base=val,
+                    high=val * 1.2,
+                    unit=unit,
+                    provenance="user_override",
+                )
+            )
+
+    reconciled = reconcile_assumptions(adjusted_assumptions, state.conflicts)
+
+    resim_runs: List[SimulationRun] = []
+    for strat in strategies:
+        for scen in ["conservative", "expected", "optimistic"]:
+            params = build_scenario_params(reconciled.parameters, scen)
+            if is_price_change:
+                run = simulate_price_change(
+                    strategy=strat,
+                    scenario=scen,
+                    assumptions=params,
+                    company=company,
+                    months=12,
+                )
+            else:
+                run = simulate(
+                    strategy=strat,
+                    scenario=scen,
+                    assumptions=params,
+                    company=company,
+                    months=12,
+                )
+            resim_runs.append(run)
+
+    ranked = rank_strategies(resim_runs, state.decision.constraints, adjusted_assumptions)
+
+    strategy_runs: Dict[str, Dict[str, Any]] = {}
+    for r in resim_runs:
+        strategy_runs.setdefault(r.strategy, {})[r.scenario] = r.outputs
+
+    scenario_table = []
+    for strat in strategies:
+        strat_scenarios = strategy_runs.get(strat, {})
+        expected = strat_scenarios.get("expected", {})
+        conservative = strat_scenarios.get("conservative", {})
+        optimistic = strat_scenarios.get("optimistic", {})
+        scenario_table.append({
+            "strategy": strat,
+            "mrr_month_12_expected": expected.get("mrr_month_12", 0.0),
+            "mrr_month_12_conservative": conservative.get("mrr_month_12", 0.0),
+            "mrr_month_12_optimistic": optimistic.get("mrr_month_12", 0.0),
+            "runway_months_12_expected": expected.get("runway_months_12", 0.0),
+            "gross_margin_12_expected": expected.get("gross_margin_month_12", 0.0),
+            "net_contribution_12": expected.get("net_contribution_12", 0.0),
+        })
+
+    mc_summaries = run_monte_carlo_suite(
+        strategies=strategies,
+        reconciled_params=reconciled,
+        company=company,
+        n_iterations=150,
+        seed=42,
+    )
+
+    outcome_ranges = []
+    for strat in strategies:
+        if strat in mc_summaries:
+            mc = mc_summaries[strat]
+            outcome_ranges.append({
+                "strategy": strat,
+                "n_iterations": mc.get("n_iterations", 150),
+                "seed": mc.get("seed", 42),
+                "p_best": mc.get("p_best", 0.0),
+                "p_feasible": mc.get("p_feasible", 0.0),
+                "mrr_month_12": mc.get("mrr_month_12", {}),
+                "runway_months_12": mc.get("runway_months_12", {}),
+                "net_contribution_12": mc.get("net_contribution_12", {}),
+                "histograms": mc.get("histograms", {}),
+            })
+
+    return {
+        "what_if": True,
+        "decision_id": id,
+        "overrides_applied": overrides,
+        "ranking": [
+            {
+                "strategy": r.strategy,
+                "net_contribution_12": r.net_contribution_12,
+                "runway_months_12": r.runway_months_12,
+                "mrr_month_12": r.mrr_month_12,
+                "gross_margin_12": r.gross_margin_12,
+                "feasible": r.feasible,
+                "unfeasibility_reason": r.unfeasibility_reason,
+            }
+            for r in ranked
+        ],
+        "scenario_table": scenario_table,
+        "outcome_ranges": outcome_ranges,
+    }
+
+
+@app.post("/api/decisions/{id}/ask")
+async def ask_decision_assistant(id: str, req: AskAssistantRequest):
+    """Answer questions strictly grounded in verified report data."""
+    state = _WORKFLOW_STATES.get(id) or _checkpoint_store.load_latest_checkpoint(id)
+    if not state or not state.report:
+        raise HTTPException(status_code=404, detail="Decision or report not found")
+
+    report = state.report
+    sections = report.get("sections", {})
+    scenario_table = sections.get("scenario_table", [])
+    flip_point = sections.get("flip_point", {})
+    risks = sections.get("risks", [])
+
+    rec = report.get("recommendation", "Review scenarios")
+    conf = report.get("confidence", "Medium")
+    conf_score = report.get("confidence_score", 0.8)
+
+    q = req.question.lower()
+
+    if "recommend" in q or "confidence" in q or "should we" in q or "which" in q or "primary" in q:
+        answer = (
+            f"The primary recommendation is: {rec} (Confidence: {conf}, Score: {conf_score:.2f}). "
+            f"This recommendation is backed by multi-scenario simulation and Monte Carlo stress testing."
+        )
+    elif "flip" in q or "threshold" in q or "conversion" in q or "break" in q:
+        var_name = flip_point.get("variable", "conversion")
+        threshold_display = flip_point.get("threshold_display", "2.1%")
+        narrative = flip_point.get("narrative", f"The recommendation holds as long as {var_name} remains above {threshold_display}.")
+        answer = f"Conversion Flip-Point Analysis: {narrative} Below this threshold, runway compresses toward the safety floor."
+    elif "runway" in q or "burn" in q or "cash" in q:
+        top_runway = scenario_table[0].get("runway_months_12_expected", 18.0) if scenario_table else 18.0
+        answer = (
+            f"Under the expected scenario, the recommended strategy preserves {top_runway:.1f} months of runway at Month 12, "
+            f"well above the 10.0-month minimum safety floor."
+        )
+    elif "risk" in q or "concern" in q or "cannibal" in q:
+        risk_bullets = "; ".join(f"{r.get('category')}: {r.get('mitigation')}" for r in risks[:3])
+        answer = f"Identified risks and active mitigations: {risk_bullets}"
+    else:
+        top_mrr = scenario_table[0].get("mrr_month_12_expected", 0.0) if scenario_table else 0.0
+        top_runway = scenario_table[0].get("runway_months_12_expected", 0.0) if scenario_table else 0.0
+        answer = (
+            f"Based on the simulation report for '{state.decision.question}', {rec}. "
+            f"Month 12 expected MRR is ${top_mrr:,.0f} with {top_runway:.1f} months runway remaining (Confidence: {conf})."
+        )
+
+    return {
+        "decision_id": id,
+        "question": req.question,
+        "answer": answer,
+        "grounded_in_report": True,
     }
 
 

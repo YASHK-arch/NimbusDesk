@@ -44,44 +44,6 @@ const OUTPUT_VARIABLES: OutputVariable[] = [
   'Paying Customers','Free Users','Infrastructure Cost','Support Load',
 ];
 
-// ─── Base Demo Data ──────────────────────────────────────────────────────────
-
-const BASE_DEMO_SCENARIOS: SimulationScenario[] = [
-  {
-    name: 'pessimistic',
-    label: 'Pessimistic',
-    probability: 18.8,
-    value: 144500,
-    rangeMin: 136000,
-    rangeMax: 150000,
-    color: '#f43f5e',
-    accentClass: 'border-rose-400',
-    driverAverages: { inflation: 5.5 },
-  },
-  {
-    name: 'realistic',
-    label: 'Realistic',
-    probability: 59.6,
-    value: 157200,
-    rangeMin: 150000,
-    rangeMax: 165000,
-    color: '#7c3aed',
-    accentClass: 'border-violet-500',
-    driverAverages: { inflation: 5.0 },
-  },
-  {
-    name: 'optimistic',
-    label: 'Optimistic',
-    probability: 20.9,
-    value: 172800,
-    rangeMin: 165000,
-    rangeMax: 185000,
-    color: '#10b981',
-    accentClass: 'border-emerald-500',
-    driverAverages: { inflation: 4.5 },
-  },
-];
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtMetric(v: number, metric: OutputVariable) {
@@ -253,19 +215,30 @@ export const SimulationResultsPanel: React.FC<SimulationResultsPanelProps> = ({
   forecastYear = 2024,
   forecastPeriod = 'Full Year',
 }) => {
-  const isDemo = simulationResult === null;
+  const scenarios: SimulationScenario[] = simulationResult?.scenarios || [];
+  const hasResults = scenarios.length > 0;
 
-  // Compute compound year multiplier
-  const yearDelta = forecastYear - 2024;
-  const compoundFactor = Math.pow(1.16, yearDelta);
-
-  const rawScenarios = isDemo ? BASE_DEMO_SCENARIOS : simulationResult!.scenarios;
-  const scenarios: SimulationScenario[] = rawScenarios.map((s) => ({
-    ...s,
-    value: Math.round(s.value * compoundFactor),
-    rangeMin: Math.round(s.rangeMin * compoundFactor),
-    rangeMax: Math.round(s.rangeMax * compoundFactor),
-  }));
+  if (!hasResults) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-50 border border-dashed border-gray-300 rounded-xl m-4">
+        <AlertTriangle className="w-10 h-10 text-amber-500 mb-3" />
+        <h3 className="text-base font-semibold text-gray-800 mb-1">
+          No Simulation Results Yet
+        </h3>
+        <p className="text-sm text-gray-500 max-w-md mb-4">
+          Submit a decision inquiry or execute a scenario stress-test to view multi-scenario projections and Monte Carlo probability distributions.
+        </p>
+        <button
+          onClick={onRunSimulation}
+          disabled={isSimulating}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow transition disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${isSimulating ? 'animate-spin' : ''}`} />
+          <span>{isSimulating ? 'Simulating Workflow...' : 'Execute Simulation Run'}</span>
+        </button>
+      </div>
+    );
+  }
 
   // Build chart distribution data scaled to year
   const chartData = (() => {
@@ -333,14 +306,6 @@ export const SimulationResultsPanel: React.FC<SimulationResultsPanelProps> = ({
 
       {/* Distribution Chart */}
       <div className="px-4 pt-4 pb-2 shrink-0">
-        {/* Demo mode warning */}
-        {isDemo && !isSimulating && (
-          <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded mb-3">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>Demo Data — Run simulation for calibrated multi-agent results</span>
-          </div>
-        )}
-
         {isSimulating ? (
           <ChartSkeleton />
         ) : (
@@ -351,12 +316,12 @@ export const SimulationResultsPanel: React.FC<SimulationResultsPanelProps> = ({
                   {showGridlines && <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />}
                   <XAxis
                     dataKey="x"
-                    tickFormatter={(v) => fmtX(v, outputVariable)}
+                    tickFormatter={(v: any) => fmtX(v, outputVariable)}
                     tick={{ fontSize: 11, fill: '#9ca3af' }}
                     stroke="#e5e7eb"
                   />
                   <YAxis
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v: any) => `${v}%`}
                     tick={{ fontSize: 11, fill: '#9ca3af' }}
                     stroke="#e5e7eb"
                   />
@@ -392,12 +357,12 @@ export const SimulationResultsPanel: React.FC<SimulationResultsPanelProps> = ({
                   {showGridlines && <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />}
                   <XAxis
                     dataKey="x"
-                    tickFormatter={(v) => fmtX(v, outputVariable)}
+                    tickFormatter={(v: any) => fmtX(v, outputVariable)}
                     tick={{ fontSize: 11, fill: '#9ca3af' }}
                     stroke="#e5e7eb"
                   />
                   <YAxis
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v: any) => `${v}%`}
                     tick={{ fontSize: 11, fill: '#9ca3af' }}
                     stroke="#e5e7eb"
                   />
@@ -435,12 +400,12 @@ export const SimulationResultsPanel: React.FC<SimulationResultsPanelProps> = ({
 
                   <XAxis
                     dataKey="x"
-                    tickFormatter={(v) => fmtX(v, outputVariable)}
+                    tickFormatter={(v: any) => fmtX(v, outputVariable)}
                     tick={{ fontSize: 11, fill: '#9ca3af' }}
                     stroke="#e5e7eb"
                   />
                   <YAxis
-                    tickFormatter={(v) => `${v}%`}
+                    tickFormatter={(v: any) => `${v}%`}
                     tick={{ fontSize: 11, fill: '#9ca3af' }}
                     stroke="#e5e7eb"
                   />

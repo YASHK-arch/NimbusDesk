@@ -332,6 +332,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
               company={company}
               forecastYear={forecastYear}
               scenarios={scenarios}
+              report={report}
             />
           )}
 
@@ -350,7 +351,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
 
           {/* 14. MODEL VALIDATOR */}
           {activeTab === 'validator' && (
-            <ModelValidatorView />
+            <ModelValidatorView report={report} />
           )}
 
           {/* 15. COMPANY BASELINE */}
@@ -938,10 +939,47 @@ const ForecastingView: React.FC<{
   company: CompanySnapshot | null;
   forecastYear: number;
   scenarios: SimulationScenario[];
-}> = ({ forecastYear }) => {
-  const months = [
-    'M1','M2','M3','M4','M5','M6','M7','M8','M9','M10','M11','M12'
-  ];
+  report: DecisionReport | null;
+}> = ({ forecastYear, report }) => {
+  const [points, setPoints] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!report?.decision_id) return;
+    setLoading(true);
+    fetch(`/api/decisions/${report.decision_id}/trajectory`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.points || data?.history) {
+          setPoints(data.points || data.history);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [report?.decision_id]);
+
+  if (points.length === 0) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Calendar className="w-6 h-6 text-blue-400" />
+            12-Month Financial Forecast Trajectory (FY{forecastYear})
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Month-by-month trajectory table computed by the deterministic simulator.
+          </p>
+        </div>
+        <div className="p-8 text-center bg-slate-950 border border-slate-800 rounded-xl">
+          <p className="text-sm text-slate-400">
+            {loading ? 'Loading simulation trajectory...' : 'Trajectory data will populate once a simulation workflow completes.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const months = points.map((p) => `M${p.month}`);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -968,33 +1006,41 @@ const ForecastingView: React.FC<{
           <tbody className="divide-y divide-slate-800/60 font-mono">
             <tr>
               <td className="px-3 py-2 text-slate-300 font-sans font-semibold">MRR ($k)</td>
-              {months.map((_, i) => (
+              {points.map((pt, i) => (
                 <td key={i} className="px-2.5 py-2 text-center text-teal-400">
-                  ${(145 + i * 2.2).toFixed(1)}k
+                  ${(pt.mrr / 1000).toFixed(1)}k
                 </td>
               ))}
             </tr>
             <tr>
               <td className="px-3 py-2 text-slate-300 font-sans font-semibold">Paying Users</td>
-              {months.map((_, i) => (
+              {points.map((pt, i) => (
                 <td key={i} className="px-2.5 py-2 text-center text-white">
-                  {480 + i * 11}
+                  {pt.paying_customers ?? '-'}
                 </td>
               ))}
             </tr>
             <tr>
               <td className="px-3 py-2 text-slate-300 font-sans font-semibold">Free Users</td>
-              {months.map((_, i) => (
+              {points.map((pt, i) => (
                 <td key={i} className="px-2.5 py-2 text-center text-blue-400">
-                  {350 * (i + 1)}
+                  {pt.free_users ?? '-'}
                 </td>
               ))}
             </tr>
             <tr>
               <td className="px-3 py-2 text-slate-300 font-sans font-semibold">Cash ($M)</td>
-              {months.map((_, i) => (
+              {points.map((pt, i) => (
                 <td key={i} className="px-2.5 py-2 text-center text-amber-400">
-                  ${(1.2 - i * 0.045).toFixed(2)}M
+                  ${((pt.cash ?? pt.cash_balance ?? 0) / 1000000).toFixed(2)}M
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <td className="px-3 py-2 text-slate-300 font-sans font-semibold">Runway (Mo)</td>
+              {points.map((pt, i) => (
+                <td key={i} className="px-2.5 py-2 text-center text-purple-400">
+                  {(pt.runway ?? pt.runway_months ?? 0).toFixed(1)}m
                 </td>
               ))}
             </tr>
@@ -1117,36 +1163,10 @@ const DistributionManagerView: React.FC = () => {
   );
 };
 
-// ─── VIEW 10: MODEL VALIDATOR (5 CHECKS) ──────────────────────────────────────
+// ─── VIEW 10: MODEL VALIDATOR (SANITY CHECKS) ─────────────────────────────────
 
-const ModelValidatorView: React.FC = () => {
-  const checks = [
-    {
-      name: 'Deterministic Math Integrity (Hard Rule R1 & R2)',
-      desc: 'All numbers computed via Python NumPy/SciPy engine; zero LLM financial hallucinations.',
-      status: 'Passed',
-    },
-    {
-      name: 'Conversion Rate Upper & Lower Bounds',
-      desc: 'Free-to-paid conversion verified within physical [0.0%, 100.0%] domain.',
-      status: 'Passed',
-    },
-    {
-      name: 'Marginal Infrastructure Non-Negativity',
-      desc: 'AWS cost per active free user is strictly non-negative ($1.00 – $1.50/user).',
-      status: 'Passed',
-    },
-    {
-      name: 'Multi-Agent Conflict Resolution (Hard Rule R3)',
-      desc: 'Weighted-evidence arbiter successfully settled CFO vs Growth divergence at 1.85%.',
-      status: 'Passed',
-    },
-    {
-      name: 'Human-in-the-Loop Approval Gate (Hard Rule R5)',
-      desc: 'No autonomous state alteration without signed human approval token.',
-      status: 'Passed',
-    },
-  ];
+const ModelValidatorView: React.FC<{ report: DecisionReport | null }> = ({ report }) => {
+  const checks = report?.sections?.verification_summary || [];
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -1154,36 +1174,53 @@ const ModelValidatorView: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
             <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-            Model Validator (5 Sanity Checks)
+            Model Validator ({checks.length > 0 ? `${checks.length} Automated Checks` : 'Verification Suite'})
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Automated verification suite validating financial model logic, boundary constraints, and rules.
+            Automated verifier suite validating financial model logic, boundary constraints, and provenance rules.
           </p>
         </div>
-        <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full font-semibold">
-          All 5 Checks Passed
-        </span>
+        {checks.length > 0 && (
+          <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-full font-semibold">
+            {checks.filter((c) => c.status.toLowerCase() === 'passed').length} / {checks.length} Verified
+          </span>
+        )}
       </div>
 
-      <div className="space-y-3">
-        {checks.map((c, i) => (
-          <div
-            key={i}
-            className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between"
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-semibold text-sm text-white">{c.name}</h3>
+      {checks.length === 0 ? (
+        <div className="p-8 text-center bg-slate-950 border border-slate-800 rounded-xl">
+          <p className="text-sm text-slate-400">
+            No verification results available. Run the multi-agent workflow to trigger automated verifier checks.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {checks.map((c, i) => {
+            const isPassed = c.status.toLowerCase() === 'passed';
+            return (
+              <div
+                key={i}
+                className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className={`w-4 h-4 ${isPassed ? 'text-emerald-400' : 'text-amber-400'}`} />
+                    <h3 className="font-semibold text-sm text-white">{c.check_name}</h3>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 ml-6">{c.detail}</p>
+                </div>
+                <span className={`text-xs font-mono px-2.5 py-1 rounded border ${
+                  isPassed
+                    ? 'text-emerald-400 bg-emerald-950/50 border-emerald-800/80'
+                    : 'text-amber-400 bg-amber-950/50 border-amber-800/80'
+                }`}>
+                  {c.status.toUpperCase()}
+                </span>
               </div>
-              <p className="text-xs text-slate-400 mt-1 ml-6">{c.desc}</p>
-            </div>
-            <span className="text-xs font-mono text-emerald-400 bg-emerald-950/50 border border-emerald-800/80 px-2.5 py-1 rounded">
-              {c.status}
-            </span>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

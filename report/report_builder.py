@@ -300,6 +300,7 @@ def build_consolidated_report(
                     "net_contribution_12_p10": net_dist.get("p10", 0.0),
                     "net_contribution_12_p50": net_dist.get("p50", 0.0),
                     "net_contribution_12_p90": net_dist.get("p90", 0.0),
+                    "histograms": mc.get("histograms", {}),
                 })
 
     llm_badge = get_llm_badge()

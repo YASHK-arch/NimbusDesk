@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "check:fake-numbers": "node scripts/check-no-fake-numbers.mjs",
+    "build": "node scripts/check-no-fake-numbers.mjs && tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
