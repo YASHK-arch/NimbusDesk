@@ -29,6 +29,8 @@
 
 ## 🏗 System Architecture
 
+> For the comprehensive visual diagram and layer-by-layer architectural guide, see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** and the high-resolution vector diagram **[docs/architecture_diagram.svg](docs/architecture_diagram.svg)**.
+
 ```mermaid
 flowchart TD
     User([CEO / Strategy Lead]) -->|Inquiry: 'Should we launch a free plan?'| Parser[Decision Parser]
