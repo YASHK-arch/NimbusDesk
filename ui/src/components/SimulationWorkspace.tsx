@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { WorkspaceToolbar } from './workspace/WorkspaceToolbar';
 import { SimulationContextBar } from './workspace/SimulationContextBar';
 import { DriversPanel } from './workspace/DriversPanel';
@@ -124,8 +124,11 @@ function cloneDrivers(ds: Driver[]): Driver[] {
   return ds.map((d) => ({ ...d }));
 }
 
-function scenariosFromReport(report: DecisionReport): SimulationScenario[] {
-  const table = report.sections.scenario_table;
+function scenariosFromTable(
+  table: any[],
+  outcomeRanges?: any[],
+  primaryStrat?: string
+): SimulationScenario[] {
   if (!table || table.length === 0) return [];
 
   const rows = [...table].sort((a, b) => a.mrr_month_12_expected - b.mrr_month_12_expected);
@@ -133,9 +136,8 @@ function scenariosFromReport(report: DecisionReport): SimulationScenario[] {
   const realistic = rows[Math.floor(rows.length / 2)] ?? rows[0];
   const optimistic = rows[rows.length - 1];
 
-  const primaryStrat = report.sections.executive_summary?.primary_strategy;
-  const outcomeRange = report.sections.outcome_ranges?.find((o) => o.strategy === primaryStrat)
-    || report.sections.outcome_ranges?.[0];
+  const outcomeRange = outcomeRanges?.find((o) => o.strategy === primaryStrat)
+    || outcomeRanges?.[0];
 
   const pFeasible = outcomeRange ? Math.round(outcomeRange.p_feasible * 100) : 75;
   const pRisk = Math.max(0, 100 - pFeasible);
@@ -177,6 +179,14 @@ function scenariosFromReport(report: DecisionReport): SimulationScenario[] {
       driverAverages: {},
     },
   ];
+}
+
+function scenariosFromReport(report: DecisionReport): SimulationScenario[] {
+  return scenariosFromTable(
+    report.sections.scenario_table,
+    report.sections.outcome_ranges,
+    report.sections.executive_summary?.primary_strategy
+  );
 }
 
 // ─── Main workspace component ─────────────────────────────────────────────────
@@ -277,6 +287,32 @@ export const SimulationWorkspace: React.FC<SimulationWorkspaceProps> = ({
   const [feedItems, setFeedItems] = useState<IntelFeedItem[]>(DEFAULT_FEED_ITEMS);
   const [isAssistantLoading, setIsAssistantLoading] = useState(false);
 
+  // ── Sync drivers dynamically from backend GET /api/params ──────────────────
+  useEffect(() => {
+    fetch('/api/params')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.params) {
+          const fetchedDrivers: Driver[] = Object.values(data.params).map((p: any) => ({
+            id: p.name,
+            name: p.label || p.name,
+            group: p.category || 'General',
+            low: p.default ? Number((p.default * 0.8).toFixed(3)) : p.min,
+            high: p.default ? Number((p.default * 1.2).toFixed(3)) : p.max,
+            unit: p.unit || 'ratio',
+            distribution: 'Triangular',
+            baselineLow: p.default ? Number((p.default * 0.8).toFixed(3)) : p.min,
+            baselineHigh: p.default ? Number((p.default * 1.2).toFixed(3)) : p.max,
+            tooltip: p.description || `${p.label} parameter`,
+          }));
+          if (fetchedDrivers.length > 0) {
+            setDrivers(fetchedDrivers);
+          }
+        }
+      })
+      .catch((err) => console.warn('Backend params notice:', err));
+  }, []);
+
   // ── Sync when parent report changes ─────────────────────────────────────────
   useEffect(() => {
     if (report) {
@@ -287,6 +323,52 @@ export const SimulationWorkspace: React.FC<SimulationWorkspaceProps> = ({
       }
     }
   }, [report]);
+
+  // ── Live What-If Re-simulation with Debounce ────────────────────────────────
+  const resimTimeoutRef = useRef<any>(null);
+
+  const triggerLiveResimulate = useCallback(
+    (updatedDrivers: Driver[]) => {
+      if (!report?.decision_id) return;
+      if (resimTimeoutRef.current) clearTimeout(resimTimeoutRef.current);
+
+      resimTimeoutRef.current = setTimeout(async () => {
+        try {
+          const overrides: Record<string, number> = {};
+          updatedDrivers.forEach((d) => {
+            if (d.modified) {
+              overrides[d.id] = (d.low + d.high) / 2;
+            }
+          });
+          if (Object.keys(overrides).length === 0) return;
+
+          const res = await fetch(`/api/decisions/${report.decision_id}/resimulate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ overrides }),
+          });
+          if (res.ok) {
+            const resimData = await res.json();
+            if (resimData.scenario_table && resimData.scenario_table.length > 0) {
+              const updatedScenarios = scenariosFromTable(
+                resimData.scenario_table,
+                resimData.outcome_ranges
+              );
+              if (updatedScenarios.length > 0) {
+                setSimulationResult({
+                  scenarios: updatedScenarios,
+                  runAt: new Date().toISOString(),
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Live resimulate notice:', e);
+        }
+      }, 500);
+    },
+    [report?.decision_id]
+  );
 
   // ── Driver change handler ───────────────────────────────────────────────────
   const handleDriverChange = useCallback(
@@ -301,11 +383,12 @@ export const SimulationWorkspace: React.FC<SimulationWorkspaceProps> = ({
         });
         setUndoStack((u) => [...u.slice(-19), prev]);
         setRedoStack([]);
+        triggerLiveResimulate(next);
         return next;
       });
       setIsDirty(true);
     },
-    []
+    [triggerLiveResimulate]
   );
 
   const handleUndo = useCallback(() => {

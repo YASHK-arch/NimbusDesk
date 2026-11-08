@@ -25,16 +25,16 @@ export const FlipPointCard: React.FC<FlipPointCardProps> = ({ flipPoint }) => {
 
   if (isRobust) {
     return (
-      <div className="bg-emerald-950/30 border border-emerald-500/40 rounded-xl p-5 flex items-start gap-4">
-        <div className="bg-emerald-500/20 p-2.5 rounded-lg text-emerald-400 shrink-0">
+      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 flex items-start gap-4 shadow-xs">
+        <div className="bg-emerald-100 p-2.5 rounded-lg text-emerald-700 shrink-0">
           <ShieldCheck className="w-6 h-6" />
         </div>
         <div>
-          <h3 className="text-sm font-bold text-emerald-300 uppercase tracking-wide">
+          <h3 className="text-sm font-bold text-emerald-900 uppercase tracking-wide">
             Robust to Variation (No Flip Point)
           </h3>
-          <p className="text-sm text-slate-200 font-medium mt-1">{flipPoint.statement}</p>
-          <span className="text-xs text-emerald-400/80 mt-1 inline-block">
+          <p className="text-sm text-gray-800 font-medium mt-1">{flipPoint.statement}</p>
+          <span className="text-xs text-emerald-700 mt-1 inline-block">
             Parametric sweep confirms the strategy ranking remains invariant across tested bounds.
           </span>
         </div>
@@ -43,20 +43,19 @@ export const FlipPointCard: React.FC<FlipPointCardProps> = ({ flipPoint }) => {
   }
 
   return (
-    <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl p-5 flex items-start gap-4">
-      <div className="bg-amber-500/20 p-2.5 rounded-lg text-amber-400 shrink-0">
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-start gap-4 shadow-xs">
+      <div className="bg-amber-100 p-2.5 rounded-lg text-amber-700 shrink-0">
         <Sliders className="w-6 h-6" />
       </div>
       <div>
-        <h3 className="text-sm font-bold text-amber-300 uppercase tracking-wide">
+        <h3 className="text-sm font-bold text-amber-900 uppercase tracking-wide">
           Deterministic Flip-Point Condition
         </h3>
-        <p className="text-sm text-slate-200 font-medium mt-1">{flipPoint.statement}</p>
-        <span className="text-xs text-amber-400/80 mt-1 inline-block">
+        <p className="text-sm text-gray-800 font-medium mt-1">{flipPoint.statement}</p>
+        <span className="text-xs text-amber-800 mt-1 inline-block">
           Threshold derived via bisection search across {flipPoint.primary_strategy} vs {flipPoint.competing_strategy}.
         </span>
       </div>
     </div>
   );
 };
-
