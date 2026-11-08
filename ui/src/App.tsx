@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Navbar } from './components/Navbar';
-import { DecisionConsole } from './components/DecisionConsole';
-import { DecisionReportView } from './components/DecisionReport';
-import { CalibrationScreen } from './components/CalibrationScreen';
-import { CompanyGraphView } from './components/CompanyGraph';
-import { CompanySnapshot, DagPlan, DecisionReport, Finding, TaskNode, WorkflowEvent } from './types';
+import { SimulationWorkspace } from './components/SimulationWorkspace';
+import {
+  CompanySnapshot,
+  DagPlan,
+  DecisionReport,
+  Finding,
+  TaskNode,
+  WorkflowEvent,
+} from './types';
 
 export const App: React.FC = () => {
-  const [currentTab, setCurrentTab] = useState<'console' | 'report' | 'calibration' | 'graph'>('console');
   const [company, setCompany] = useState<CompanySnapshot | null>(null);
   const [decisionQuery, setDecisionQuery] = useState('Should we launch a free plan?');
   const [currentDecisionId, setCurrentDecisionId] = useState<string | null>(null);
@@ -27,75 +29,81 @@ export const App: React.FC = () => {
       .catch((err) => console.error('Failed to load company snapshot:', err));
   }, []);
 
-  const handleSubmitDecision = async () => {
-    if (!decisionQuery.trim()) return;
+  const handleSubmitDecision = async (): Promise<DecisionReport | null> => {
+    if (!decisionQuery.trim()) return null;
     setIsRunning(true);
     setEvents([]);
     setFindings({});
     setReport(null);
     setApprovalStatus(null);
 
-    try {
-      const resp = await fetch('/api/decisions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: decisionQuery }),
-      });
-
-      if (!resp.ok) {
-        const errData = await resp.json();
-        alert(errData.detail?.message || 'Unsupported decision');
-        setIsRunning(false);
-        return;
-      }
-
-      const data = await resp.json();
-      setCurrentDecisionId(data.decision_id);
-      setPlan(data.plan);
-
-      // Start SSE Event Stream
-      const eventSource = new EventSource(`/api/decisions/${data.decision_id}/stream`);
-
-      eventSource.onmessage = (e) => {
+    return new Promise((resolve) => {
+      (async () => {
         try {
-          const parsed: WorkflowEvent = JSON.parse(e.data);
-          setEvents((prev) => [parsed, ...prev]);
+          const resp = await fetch('/api/decisions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: decisionQuery }),
+          });
 
-          // Update node status in DAG plan
-          if (parsed.type === 'agent_started' && parsed.payload?.task_id) {
-            updateNodeStatus(parsed.payload.task_id, 'running');
-          } else if (parsed.type === 'finding_posted' && parsed.agent) {
-            updateNodeStatus(parsed.payload?.task_id, 'done');
-          } else if (parsed.type === 'agent_failed' && parsed.payload?.task_id) {
-            updateNodeStatus(parsed.payload.task_id, 'failed');
-          } else if (parsed.type === 'recovery_done' && parsed.payload?.task_id) {
-            updateNodeStatus(parsed.payload.task_id, 'done');
+          if (!resp.ok) {
+            const errData = await resp.json();
+            alert(errData.detail?.message || 'Unsupported decision');
+            setIsRunning(false);
+            resolve(null);
+            return;
           }
 
-          // Report Ready trigger
-          if (parsed.type === 'report_ready') {
+          const data = await resp.json();
+          setCurrentDecisionId(data.decision_id);
+          setPlan(data.plan);
+
+          // Start SSE Event Stream
+          const eventSource = new EventSource(`/api/decisions/${data.decision_id}/stream`);
+
+          eventSource.onmessage = (e) => {
+            try {
+              const parsed: WorkflowEvent = JSON.parse(e.data);
+              setEvents((prev) => [parsed, ...prev]);
+
+              if (parsed.type === 'agent_started' && parsed.payload?.task_id) {
+                updateNodeStatus(parsed.payload.task_id, 'running');
+              } else if (parsed.type === 'finding_posted' && parsed.agent) {
+                updateNodeStatus(parsed.payload?.task_id, 'done');
+              } else if (parsed.type === 'agent_failed' && parsed.payload?.task_id) {
+                updateNodeStatus(parsed.payload.task_id, 'failed');
+              } else if (parsed.type === 'recovery_done' && parsed.payload?.task_id) {
+                updateNodeStatus(parsed.payload.task_id, 'done');
+              }
+
+              if (parsed.type === 'report_ready') {
+                eventSource.close();
+                setIsRunning(false);
+                fetchReport(data.decision_id).then(resolve);
+              }
+            } catch (err) {
+              console.error('SSE parsing error:', err);
+            }
+          };
+
+          eventSource.onerror = () => {
             eventSource.close();
             setIsRunning(false);
-            fetchReport(data.decision_id);
-          }
+            fetchReport(data.decision_id).then(resolve);
+          };
         } catch (err) {
-          console.error('SSE parsing error:', err);
+          console.error('Error submitting decision:', err);
+          setIsRunning(false);
+          resolve(null);
         }
-      };
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        setIsRunning(false);
-        // Fallback fetch
-        fetchReport(data.decision_id);
-      };
-    } catch (err) {
-      console.error('Error submitting decision:', err);
-      setIsRunning(false);
-    }
+      })();
+    });
   };
 
-  const updateNodeStatus = (taskId: string, status: 'pending' | 'running' | 'done' | 'failed') => {
+  const updateNodeStatus = (
+    taskId: string,
+    status: 'pending' | 'running' | 'done' | 'failed'
+  ) => {
     setPlan((prev) => {
       if (!prev) return prev;
       return {
@@ -105,9 +113,8 @@ export const App: React.FC = () => {
     });
   };
 
-  const fetchReport = async (decId: string) => {
+  const fetchReport = async (decId: string): Promise<DecisionReport | null> => {
     try {
-      // Fetch full decision state including findings
       const statusResp = await fetch(`/api/decisions/${decId}`);
       if (statusResp.ok) {
         const statusData = await statusResp.json();
@@ -116,15 +123,20 @@ export const App: React.FC = () => {
 
       const reportResp = await fetch(`/api/decisions/${decId}/report`);
       if (reportResp.ok) {
-        const reportData = await reportResp.json();
+        const reportData: DecisionReport = await reportResp.json();
         setReport(reportData);
+        return reportData;
       }
     } catch (e) {
       console.error('Failed to fetch report:', e);
     }
+    return null;
   };
 
-  const handleInjectFailure = async (agent: string, mode: 'timeout' | 'exception' | 'bad_output') => {
+  const handleInjectFailure = async (
+    agent: string,
+    mode: 'timeout' | 'exception' | 'bad_output'
+  ) => {
     if (!currentDecisionId) {
       alert('Please submit a decision before injecting failure.');
       return;
@@ -135,7 +147,9 @@ export const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agent, mode }),
       });
-      alert(`Chaos Injected: ${mode.toUpperCase()} on ${agent}. Supervisor will handle recovery.`);
+      alert(
+        `Chaos Injected: ${mode.toUpperCase()} on ${agent}. Supervisor will handle recovery.`
+      );
     } catch (e) {
       console.error('Failed to inject failure:', e);
     }
@@ -158,50 +172,25 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col">
-      <Navbar
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
-        hasReport={report !== null}
-        status={isRunning ? 'running' : 'idle'}
-      />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
-        {currentTab === 'console' && (
-          <DecisionConsole
-            company={company}
-            decisionQuery={decisionQuery}
-            setDecisionQuery={setDecisionQuery}
-            onSubmitDecision={handleSubmitDecision}
-            isRunning={isRunning}
-            plan={plan}
-            events={events}
-            findings={findings}
-            onInjectFailure={handleInjectFailure}
-            onSelectNode={setSelectedNode}
-            selectedNode={selectedNode}
-            onViewReport={() => setCurrentTab('report')}
-            hasReport={report !== null}
-          />
-        )}
-
-        {currentTab === 'report' && (
-          <DecisionReportView
-            report={report}
-            onApprove={handleApprove}
-            onReject={() => alert('Proposal rejected. Recorded in audit log.')}
-            onRequestChanges={() => {
-              setCurrentTab('console');
-              handleSubmitDecision();
-            }}
-            approvalStatus={approvalStatus}
-          />
-        )}
-
-        {currentTab === 'calibration' && <CalibrationScreen />}
-
-        {currentTab === 'graph' && <CompanyGraphView />}
-      </main>
-    </div>
+    <SimulationWorkspace
+      company={company}
+      decisionQuery={decisionQuery}
+      setDecisionQuery={setDecisionQuery}
+      onRunDecision={handleSubmitDecision}
+      isSimulating={isRunning}
+      plan={plan}
+      events={events}
+      findings={findings}
+      report={report}
+      onInjectFailure={handleInjectFailure}
+      onSelectNode={setSelectedNode}
+      selectedNode={selectedNode}
+      onApprove={handleApprove}
+      onReject={() => alert('Proposal rejected. Recorded in audit log.')}
+      onRequestChanges={() => {
+        handleSubmitDecision();
+      }}
+      approvalStatus={approvalStatus}
+    />
   );
 };

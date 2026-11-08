@@ -5,7 +5,8 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=Python&logoColor=white)](https://www.python.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB.svg?style=flat&logo=React&logoColor=black)](https://react.dev/)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-E92063.svg?style=flat)](https://docs.pydantic.dev/)
-[![Tests](https://img.shields.io/badge/Tests-94%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-128%20Passed-brightgreen.svg)]()
+[![CI](https://github.com/YASHK-arch/NimbusDesk/actions/workflows/ci.yml/badge.svg)](https://github.com/YASHK-arch/NimbusDesk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **Hackathon Problem Statement:** SwarmFlow: Multi-Agent Task Coordination Engine  
@@ -27,6 +28,8 @@
 ---
 
 ## 🏗 System Architecture
+
+> For the comprehensive visual diagram and layer-by-layer architectural guide, see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** and the high-resolution vector diagram **[docs/architecture_diagram.svg](docs/architecture_diagram.svg)**.
 
 ```mermaid
 flowchart TD
@@ -81,19 +84,49 @@ flowchart TD
 
 - **Implemented Real (`[MVP-REAL]`):**
   - Full multi-agent orchestration, async DAG dispatcher, event bus streaming.
-  - Deterministic 24-month SaaS dynamics simulator (`NumPy`, Monte Carlo distributions, OAT Tornado sensitivity, Bisection flip-point search).
+  - Polymorphic `SimulatorAdapter` unifying deterministic 24-month SaaS dynamics (`NumPy`, Monte Carlo distributions, OAT Tornado sensitivity, Bisection flip-point search).
   - Price-change simulation model with tier-specific price elasticity mechanics.
-  - Multi-turn deliberation protocol with Skeptic critique and agent rebuttals.
-  - Rule-based conflict detection and dual-simulation parametric resolution.
+  - Multi-turn deliberation protocol with data-driven Skeptic critique and structured agent rebuttals.
+  - Rule-based conflict detection and simulation-based resolution (no voting, signed deltas, converged consensus verification).
   - Live failure injection (`POST /api/decisions/{id}/inject-failure`) and backoff / degraded recovery with `BackupAnalyst`.
-  - 6 deterministic numerical verification checks catching fabricated numbers.
+  - Non-vacuous numerical verification checks with `NumberRegistry` tracing every report figure to source.
   - Complete FastAPI REST API + SSE streaming.
   - Full React + TypeScript + Tailwind UI (Console, Report, Calibration, Company Graph).
 - **Seeded / Simulated (`[MVP-MOCK]`):**
-  - Fictional B2B SaaS dataset ("NimbusDesk", Series A, $144k MRR, 12.6mo runway) in `data/synthetic_company.json`.
-  - Illustrative SaaS benchmarks in `data/benchmarks.json`.
+  - Fictional B2B SaaS dataset ("NimbusDesk", Series A, $89.7k MRR, 12.6mo runway) in `data/synthetic_company.json`.
+  - Illustrative SaaS benchmarks in `data/benchmarks.json` (`"illustrative": true, "sourced": false`).
   - 4 historical decisions with predicted vs. actual outcomes in `data/seeded_decisions.json`.
-  - LLM layer operates in explicit modes (`mock`, `real`, `record`, `replay`). Defaults to deterministic mock mode for offline, lightning-fast execution.
+  - Calibration history memory is seeded illustrative data (`[MVP-MOCK]`).
+
+---
+
+## 🤖 LLM Modes (mock / real / record / replay)
+
+VentureTwin supports four explicit LLM execution modes configured via `LLM_MODE` in `.env`:
+
+1. **`mock` (Default):** Generates deterministic domain-specialist findings offline with zero API keys and lightning-fast CI runtime.
+2. **`real`:** Executes live LLM queries against configured frontier models (`GEMINI_MODEL`, `OPENAI_MODEL`, or `ANTHROPIC_MODEL`). Requires explicit model identification and API key; missing keys or models immediately raise `ConfigurationError` (no silent fallback).
+3. **`record`:** Makes live API calls while capturing sanitized request/response cassettes to disk for repeatable evaluation.
+4. **`replay`:** Reads committed test cassettes offline with bit-for-bit fidelity and zero network dependency.
+
+> **Evaluation Note:** For judge evaluation and live demonstrations, the primary demo should be run in **`replay`** or **`real`** mode, not `mock`.
+
+---
+
+## 🧬 What is Synthetic
+
+All company data, financial figures, customer counts, and benchmarks used in VentureTwin are explicitly synthetic:
+- **NimbusDesk Dataset (`data/synthetic_company.json`):** A realistic but fictional Series A B2B ticketing SaaS company with 1,447 paying accounts across Starter ($49/mo), Growth ($199/mo), and Enterprise ($999/mo) plans.
+- **Industry Benchmarks (`data/benchmarks.json`):** Illustrative median conversion rates (2.2%), cannibalization estimates (8.0%), support ticket loads (0.04 tickets/user/mo), and starter price elasticity (0.65). All benchmark objects carry `"illustrative": true, "sourced": false` metadata.
+- **Synthetic Badge (Hard Rule R6 / R7):** Every report and UI screen displays a prominent `Synthetic Data` badge. No claims of real external enterprise customer data or validated live third-party integrations are made.
+
+---
+
+## ⚠️ Known Limitations & Planned Extensions
+
+- **`[MVP-MOCK]` Calibration Ledger:** The Calibration screen currently presents seeded historical decision records (`data/seeded_decisions.json`). Production bi-directional sync to external accounting/ERP ledgers (NetSuite, QuickBooks) is planned.
+- **`[MVP-REAL]` Decision Models:** Fully implemented and validated for `free_plan` (freemium & usage caps) and `price_change` (tier elasticity & contraction). Additional strategic archetypes (sales quota restructuring, international multi-currency rollout) are planned.
+- **Hard Rule R5 (Human-in-the-Loop):** The platform strictly produces advisory stress-tests with traceable simulation evidence. It never autonomously alters external billing or production configuration without explicit human approval.
 
 ---
 
@@ -131,19 +164,23 @@ Execute **The One-Minute Acceptance Test Suite**:
 ```
 
 ### 4. Launch Application
-Launch the unified FastAPI server (serves both API and the interactive React frontend):
+Launch the unified FastAPI server (serves both the API and the interactive React Simulation Workspace frontend):
 ```bash
 .venv/bin/uvicorn api.app:app --reload --port 8000
 ```
 Open your browser at:
-- **Interactive Web App:** `http://localhost:8000/`
+- **Interactive Web App (Primary Endpoint):** `http://localhost:8000/`
 - **Swagger API Docs:** `http://localhost:8000/docs`
+
+> **Note on Endpoints & Distribution:**
+> - **Unified Production Endpoint:** `http://localhost:8000/` is the single official application endpoint. The pre-built production frontend is bundled in `ui/dist` and served directly by FastAPI. Zero Node.js installation is required to run the full application!
+> - **Frontend Development (HMR):** For live frontend development with Vite hot-reloading, run `cd ui && npm run dev` on `http://localhost:5173/`, which proxies all API calls to `http://localhost:8000`. Both endpoints serve the identical VentureTwin Simulation Workspace.
 
 ---
 
 ## 🎬 Demo Walkthrough
 
-Follow the 3-minute hackathon judge demo script in [docs/DEMO_SCRIPT.md](file:///Users/omrajput/Desktop/Projects/Citadel-engine/docs/DEMO_SCRIPT.md):
+Follow the 3-minute hackathon judge demo script in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md):
 1. **Decision Console:** Inspect NimbusDesk metrics ($144k MRR, 12.6mo runway).
 2. **Stress-Test:** Click chip `"Should we launch a free plan?"`.
 3. **Watch DAG:** 5 specialist agents run concurrently.

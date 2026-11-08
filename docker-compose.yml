@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  venturetwin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: venturetwin
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_MODE=mock
+    volumes:
+      # Persist SQLite checkpoints and runtime data across container restarts
+      - ./data:/app/data
+    restart: unless-stopped
+

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Layers, ShieldCheck, Activity, LineChart, Network, Database } from 'lucide-react';
+import { Layers, ShieldCheck, Activity, LineChart, Network, Database, LayoutDashboard } from 'lucide-react';
 
 interface NavbarProps {
-  currentTab: 'console' | 'report' | 'calibration' | 'graph';
-  setCurrentTab: (tab: 'console' | 'report' | 'calibration' | 'graph') => void;
+  currentTab: 'workspace' | 'console' | 'report' | 'calibration' | 'graph';
+  setCurrentTab: (tab: 'workspace' | 'console' | 'report' | 'calibration' | 'graph') => void;
   hasReport: boolean;
   status: string;
 }
@@ -11,7 +11,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, hasReport, status }) => {
   return (
     <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-3">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <div className="max-w-full mx-auto flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center gap-3">
           <div className="bg-teal-500/10 p-2 rounded-lg border border-teal-500/30 text-teal-400">
@@ -25,7 +25,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, hasRe
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
-              Multi-Agent Coordination & SaaS Decision Stress-Test Platform
+              Multi-Agent Coordination &amp; SaaS Decision Stress-Test Platform
             </p>
           </div>
         </div>
@@ -47,6 +47,19 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, hasRe
 
         {/* Navigation Tabs */}
         <nav className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+          {/* Simulation Workspace — primary new tab */}
+          <button
+            onClick={() => setCurrentTab('workspace')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              currentTab === 'workspace'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            Simulation Workspace
+          </button>
+
           <button
             onClick={() => setCurrentTab('console')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition ${
@@ -83,7 +96,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, hasRe
             }`}
           >
             <LineChart className="w-3.5 h-3.5" />
-            Calibration & History
+            Calibration &amp; History
           </button>
 
           <button

@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "check:fake-numbers": "node scripts/check-no-fake-numbers.mjs",
+    "build": "node scripts/check-no-fake-numbers.mjs && tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.460.0"
+    "recharts": "^2.15.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

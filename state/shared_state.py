@@ -27,7 +27,10 @@ class WorkflowState(BaseModel):
     conflicts: List[Conflict] = Field(default_factory=list)
     skeptic_challenges: List[str] = Field(default_factory=list)
     simulation_runs: List[SimulationRun] = Field(default_factory=list)
+    reconciled: Optional[Any] = None
     mc_summaries: Optional[Dict[str, Any]] = None
+    ignored_assumptions: List[Dict[str, Any]] = Field(default_factory=list)
+    clamped_assumptions: List[Dict[str, Any]] = Field(default_factory=list)
     verification_results: List[VerificationResult] = Field(default_factory=list)
     report: Optional[Dict[str, Any]] = None
     event_log: List[WorkflowEvent] = Field(default_factory=list)

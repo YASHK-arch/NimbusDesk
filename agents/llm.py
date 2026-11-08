@@ -5,11 +5,13 @@ bounded retries, low temperature, and deterministic mock mode.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
 import os
 from pathlib import Path
+import random
 import re
 import types
 import typing
@@ -34,9 +36,59 @@ def get_llm_mode() -> str:
     if mode:
         return mode.strip().lower()
     legacy_mock = os.getenv("LLM_MOCK_MODE")
-    if legacy_mock and legacy_mock.lower() in ("false", "0", "no"):
-        return "real"
+    if legacy_mock:
+        return "mock" if legacy_mock.lower() in ("true", "1", "yes") else "real"
     return "mock"
+
+
+def get_llm_provider() -> str:
+    """Return the active provider ('gemini', 'openai', 'anthropic', 'replay', or 'mock')."""
+    mode = get_llm_mode()
+    provider = os.getenv("LLM_PROVIDER")
+    if provider:
+        return provider.strip().lower()
+    if mode == "mock":
+        return "mock"
+    if mode == "replay":
+        return "replay"
+    # Real or record mode: determine from explicit API keys
+    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+        return "gemini"
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    raise ConfigurationError(
+        "LLM_MODE is set to 'real' or 'record', but no API key was provided. "
+        "Set LLM_PROVIDER to 'gemini', 'openai', or 'anthropic' and configure the corresponding API key."
+    )
+
+
+def get_llm_model() -> str:
+    """Return the explicitly configured model identifier without fallback guessing."""
+    mode = get_llm_mode()
+    if mode == "mock":
+        return os.getenv("GEMINI_MODEL") or os.getenv("OPENAI_MODEL") or os.getenv("ANTHROPIC_MODEL") or "mock-deterministic"
+    if mode == "replay":
+        return os.getenv("GEMINI_MODEL") or os.getenv("OPENAI_MODEL") or os.getenv("ANTHROPIC_MODEL") or "replay-cassette"
+
+    provider = get_llm_provider()
+    if provider == "gemini":
+        model = os.getenv("GEMINI_MODEL")
+        if not model:
+            raise ConfigurationError("Set GEMINI_MODEL to a currently supported model ID from the provider's docs (e.g. gemini-2.0-flash)")
+        return model
+    elif provider == "openai":
+        model = os.getenv("OPENAI_MODEL")
+        if not model:
+            raise ConfigurationError("Set OPENAI_MODEL to a currently supported model ID from the provider's docs (e.g. gpt-4o)")
+        return model
+    elif provider == "anthropic":
+        model = os.getenv("ANTHROPIC_MODEL")
+        if not model:
+            raise ConfigurationError("Set ANTHROPIC_MODEL to a currently supported model ID from the provider's docs (e.g. claude-3-5-sonnet-20241022)")
+        return model
+    return "unknown"
 
 
 def get_llm_badge() -> str:
@@ -44,21 +96,24 @@ def get_llm_badge() -> str:
     mode = get_llm_mode()
     if mode == "mock":
         return "LLM Mode: Mock (deterministic seed)"
-    elif mode == "real":
-        if os.getenv("ANTHROPIC_API_KEY"):
-            prov = "Claude 3.5 Sonnet"
-        elif os.getenv("OPENAI_API_KEY"):
-            prov = "GPT-4o"
-        elif os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
-            prov = "Gemini 1.5 Flash"
-        else:
-            prov = "Real API"
-        return f"LLM Mode: Real ({prov})"
-    elif mode == "record":
-        return "LLM Mode: Record (Saving Cassettes)"
     elif mode == "replay":
         return "LLM Mode: Replay (Deterministic Cassettes)"
-    return f"LLM Mode: {mode.title()}"
+    try:
+        prov = get_llm_provider()
+        model = get_llm_model()
+        return f"LLM Mode: {mode.title()} ({prov.title()}: {model})"
+    except Exception:
+        return f"LLM Mode: {mode.title()}"
+
+
+def compute_cassette_hash(prompt: str, model_name: str, provider: str, model: str) -> str:
+    """Compute stable SHA-256 hash by stripping volatile timestamps and UUIDs."""
+    normalized = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?", "[TIMESTAMP]", prompt)
+    normalized = re.sub(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", "[UUID]", normalized)
+    normalized = re.sub(r"Decision id:\s*[^\s\n\.,]+", "Decision id: [ID]", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    key = f"{normalized}:{model_name}:{provider}:{model}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
 
 
 # Registry for canned mock handlers: model_class -> handler callable or canned instance
@@ -103,8 +158,10 @@ async def llm_call(
 
     # Replay mode: read cassette file
     if mode == "replay":
+        provider = os.getenv("LLM_PROVIDER", "gemini")
+        model = os.getenv("GEMINI_MODEL") or os.getenv("OPENAI_MODEL") or os.getenv("ANTHROPIC_MODEL") or "default"
         if not cassette_file:
-            prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+            prompt_hash = compute_cassette_hash(prompt, response_model.__name__, provider, model)
             cassette_file = f"tests/cassettes/{prompt_hash}.json"
         c_path = Path(cassette_file)
         if not c_path.exists():
@@ -132,16 +189,20 @@ async def llm_call(
             logger.warning(f"Default mock generation failed for {response_model.__name__}: {e}")
             raise RuntimeError(f"No mock handler or mock_response provided for {response_model.__name__}")
 
-    # Real or Record mode: require valid API key
+    # Real or Record mode: require valid provider and model
+    provider = get_llm_provider()
+    model = get_llm_model()
+
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 
-    if not (gemini_key or openai_key or anthropic_key):
-        raise ConfigurationError(
-            "LLM_MODE is set to 'real' or 'record', but no API key was provided. "
-            "Please configure GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY."
-        )
+    if provider == "gemini" and not gemini_key:
+        raise ConfigurationError("LLM_PROVIDER is 'gemini' but GEMINI_API_KEY is not set.")
+    elif provider == "openai" and not openai_key:
+        raise ConfigurationError("LLM_PROVIDER is 'openai' but OPENAI_API_KEY is not set.")
+    elif provider == "anthropic" and not anthropic_key:
+        raise ConfigurationError("LLM_PROVIDER is 'anthropic' but ANTHROPIC_API_KEY is not set.")
 
     json_schema = json.dumps(response_model.model_json_schema(), indent=2)
     augmented_prompt = f"{prompt}\n\nStrict output requirement: Return ONLY a valid JSON object matching this JSON Schema:\n{json_schema}"
@@ -151,26 +212,29 @@ async def llm_call(
     for attempt in range(1, max_retries + 1):
         try:
             raw_response_text = ""
-            if gemini_key:
+            if provider == "gemini" and gemini_key:
                 raw_response_text = await _call_gemini(
                     api_key=gemini_key,
                     system_prompt=system_prompt,
                     prompt=augmented_prompt,
                     temperature=temperature,
+                    model=model,
                 )
-            elif openai_key:
+            elif provider == "openai" and openai_key:
                 raw_response_text = await _call_openai(
                     api_key=openai_key,
                     system_prompt=system_prompt,
                     prompt=augmented_prompt,
                     temperature=temperature,
+                    model=model,
                 )
-            elif anthropic_key:
+            elif provider == "anthropic" and anthropic_key:
                 raw_response_text = await _call_anthropic(
                     api_key=anthropic_key,
                     system_prompt=system_prompt,
                     prompt=augmented_prompt,
                     temperature=temperature,
+                    model=model,
                 )
 
             cleaned = clean_json_markdown(raw_response_text)
@@ -180,7 +244,7 @@ async def llm_call(
             # If in record mode, write cassette to disk
             if mode == "record":
                 if not cassette_file:
-                    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+                    prompt_hash = compute_cassette_hash(prompt, response_model.__name__, provider, model)
                     cassette_file = f"tests/cassettes/{prompt_hash}.json"
                 c_path = Path(cassette_file)
                 c_path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,16 +256,30 @@ async def llm_call(
         except (ValidationError, json.JSONDecodeError, httpx.HTTPError) as err:
             last_error = err
             logger.warning(f"Attempt {attempt}/{max_retries} failed for {response_model.__name__}: {err}")
-            if attempt == max_retries:
+            if attempt < max_retries:
+                delay = 0.5 * (2 ** (attempt - 1)) + random.uniform(0.1, 0.4)
+                if isinstance(err, httpx.HTTPStatusError):
+                    if err.response.status_code in (429, 500, 502, 503, 504):
+                        retry_after = err.response.headers.get("Retry-After")
+                        if retry_after:
+                            try:
+                                delay = max(delay, float(retry_after) + random.uniform(0.1, 0.5))
+                            except ValueError:
+                                pass
+                await asyncio.sleep(delay)
+            else:
                 break
 
     raise RuntimeError(f"Failed to obtain valid {response_model.__name__} after {max_retries} attempts: {last_error}")
 
-    raise RuntimeError(f"Failed to obtain valid {response_model.__name__} after {max_retries} attempts: {last_error}")
 
-
-async def _call_gemini(api_key: str, system_prompt: str, prompt: str, temperature: float) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+async def _call_gemini(api_key: str, system_prompt: str, prompt: str, temperature: float, model: Optional[str] = None) -> str:
+    target_model = model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json",
+    }
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"parts": [{"text": prompt}]}],
@@ -211,7 +289,7 @@ async def _call_gemini(api_key: str, system_prompt: str, prompt: str, temperatur
         },
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload)
+        resp = await client.post(url, headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
         candidates = data.get("candidates", [])
@@ -220,11 +298,12 @@ async def _call_gemini(api_key: str, system_prompt: str, prompt: str, temperatur
         return candidates[0]["content"]["parts"][0]["text"]
 
 
-async def _call_openai(api_key: str, system_prompt: str, prompt: str, temperature: float) -> str:
+async def _call_openai(api_key: str, system_prompt: str, prompt: str, temperature: float, model: Optional[str] = None) -> str:
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    target_model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
     payload = {
-        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        "model": target_model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -239,15 +318,16 @@ async def _call_openai(api_key: str, system_prompt: str, prompt: str, temperatur
         return data["choices"][0]["message"]["content"]
 
 
-async def _call_anthropic(api_key: str, system_prompt: str, prompt: str, temperature: float) -> str:
+async def _call_anthropic(api_key: str, system_prompt: str, prompt: str, temperature: float, model: Optional[str] = None) -> str:
     url = "https://api.anthropic.com/v1/messages"
+    target_model = model or os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
     }
     payload = {
-        "model": os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022"),
+        "model": target_model,
         "max_tokens": 4096,
         "temperature": temperature,
         "system": system_prompt,

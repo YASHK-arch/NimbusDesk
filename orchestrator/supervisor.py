@@ -190,6 +190,22 @@ class Supervisor:
         state.status = "completed"
         return state
 
+    def _build_analysis_context(self, agent_name: str, state: Optional[WorkflowState] = None) -> Dict[str, Any]:
+        """Provide isolated context to analysis agents: decision and company snapshot only (no peer findings)."""
+        target_state = state or getattr(self, "state", None)
+        decision_data = {}
+        company_data = None
+        if target_state:
+            decision_data = target_state.decision.model_dump() if hasattr(target_state.decision, "model_dump") else target_state.decision
+            if hasattr(target_state, "company") and target_state.company:
+                company_data = target_state.company.model_dump() if hasattr(target_state.company, "model_dump") else target_state.company
+        if not company_data:
+            company_data = load_company_snapshot().model_dump()
+        return {
+            "decision": decision_data,
+            "company": company_data,
+        }
+
     async def _execute_single_task(
         self,
         task: Task,
@@ -216,9 +232,10 @@ class Supervisor:
                 if agent:
                     finding: Optional[Finding] = None
                     task.attempts = 1
+                    analysis_context = self._build_analysis_context(task.owner_agent, state=state)
                     fail_1 = self._get_failure_for_attempt(target_keys, 1, injected_failures)
                     try:
-                        finding = await agent.run(task=task, state=state.model_dump(), failure_mode=fail_1)
+                        finding = await agent.run(task=task, state=analysis_context, failure_mode=fail_1)
                     except Exception as first_exc:
                         await self.bus.emit(
                             event_type="agent_failed",
@@ -235,7 +252,7 @@ class Supervisor:
 
                         fail_2 = self._get_failure_for_attempt(target_keys, 2, injected_failures)
                         try:
-                            finding = await agent.run(task=task, state=state.model_dump(), failure_mode=fail_2)
+                            finding = await agent.run(task=task, state=analysis_context, failure_mode=fail_2)
                             await self.bus.emit(
                                 event_type="recovery_done",
                                 agent="Supervisor",
@@ -264,8 +281,43 @@ class Supervisor:
 
                     state.findings[agent.name] = finding
 
-                    # Collect proposed assumptions
+                    # Whitelist and clamp assumptions from agent finding
+                    from simulation.params import SIM_PARAMS
+                    price_param_names = {"price_elasticity_starter", "price_elasticity_growth", "expansion_revenue_rate", "contraction_risk_rate"}
+                    allowed_params = set(SIM_PARAMS.keys()) | price_param_names
+
                     for asm in finding.assumptions:
+                        if asm.name not in allowed_params:
+                            state.ignored_assumptions.append({
+                                "agent": task.owner_agent,
+                                "name": asm.name,
+                                "base": asm.base,
+                                "reason": "Not in simulator parameter whitelist; recorded as operational context assumption"
+                            })
+                        else:
+                            meta = SIM_PARAMS.get(asm.name)
+                            if meta and "bounds" in meta:
+                                min_val, max_val = meta["bounds"]
+                                clamped = False
+                                orig_base = asm.base
+                                if asm.base < min_val or asm.base > max_val:
+                                    asm.base = max(min_val, min(max_val, asm.base))
+                                    clamped = True
+                                if asm.low < min_val or asm.low > max_val:
+                                    asm.low = max(min_val, min(max_val, asm.low))
+                                    clamped = True
+                                if asm.high < min_val or asm.high > max_val:
+                                    asm.high = max(min_val, min(max_val, asm.high))
+                                    clamped = True
+                                if clamped:
+                                    state.clamped_assumptions.append({
+                                        "agent": task.owner_agent,
+                                        "name": asm.name,
+                                        "original_base": orig_base,
+                                        "clamped_base": asm.base,
+                                        "bounds": [min_val, max_val]
+                                    })
+
                         if not any(existing.name == asm.name and existing.proposed_by == asm.proposed_by for existing in state.assumptions):
                             state.assumptions.append(asm)
 
@@ -331,7 +383,10 @@ class Supervisor:
         """Internal handler for orchestrator synthesis, conflict resolution, skeptic review, and verification tasks."""
         kind = getattr(task, "kind", None)
 
-        if kind == "agent_discussion" or "discussion" in task.id:
+        if kind == "agent_discussion":
+            from pathlib import Path
+            import json
+
             # 1. Record initial proposals from specialist agent findings
             for agent_name, finding in state.findings.items():
                 if finding.agent != "Skeptic":
@@ -345,50 +400,111 @@ class Supervisor:
                         )
                     )
 
-            # 2. Skeptic posts critiques challenging Growth and CFO conversion bounds
-            growth_critique = Message(
-                sender="Skeptic",
-                recipient="Growth",
-                kind="critique",
-                content=(
-                    "Growth conversion projection of 4.5% (range 3.5%-6.5%) significantly exceeds the 2.2% B2B SaaS benchmark "
-                    "median from data/benchmarks.json. In unmetered ticketing, top-of-funnel friction collapse does not guarantee paid expansion."
-                ),
-            )
-            cfo_critique = Message(
-                sender="Skeptic",
-                recipient="CFO",
-                kind="critique",
-                content=(
-                    "CFO conversion floor of 1.5% (range 1.0%-2.2%) assumes extreme customer reluctance and overstates cannibalization at 12%. "
-                    "Features like enterprise SAML and audit logs will prevent mature accounts from downgrading."
-                ),
-            )
-            state.messages.extend([growth_critique, cfo_critique])
+            # 2. Load benchmarks data for data-driven critiques
+            benchmarks_path = Path(__file__).resolve().parent.parent / "data" / "benchmarks.json"
+            benchmarks: Dict[str, Any] = {}
+            if benchmarks_path.exists():
+                try:
+                    with open(benchmarks_path, "r", encoding="utf-8") as f:
+                        benchmarks = json.load(f)
+                except Exception as e:
+                    logger.warning("Could not load benchmarks.json: %s", e)
 
-            # 3. Growth and CFO reply with rebuttals
-            growth_rebuttal = Message(
-                sender="Growth",
-                recipient="Skeptic",
-                kind="rebuttal",
-                content=(
-                    "Rebuttal: Modern product-led growth data demonstrates organic invite virality. "
-                    "With onboarding checklists and 14-day premium feature previews, 3.5%-6.5% conversion is empirically defensible."
-                ),
-            )
-            cfo_rebuttal = Message(
-                sender="CFO",
-                recipient="Skeptic",
-                kind="rebuttal",
-                content=(
-                    "Rebuttal: Capital preservation dictates that runway cannot depend on optimistic virality. "
-                    "Historical trial conversion in compliance-sensitive B2B workflows remains anchored below 2.0%."
-                ),
-            )
-            state.messages.extend([growth_rebuttal, cfo_rebuttal])
+            bench_map = {
+                b["metric"]: b["value"]
+                for b in benchmarks.values()
+                if isinstance(b, dict) and "metric" in b and "value" in b
+            }
 
-            # Emit message events for event streaming
-            for msg in [growth_critique, cfo_critique, growth_rebuttal, cfo_rebuttal]:
+            # 3. Skeptic dynamically critiques assumptions deviating from benchmarks or with wide ranges
+            critiques: List[Message] = []
+            for agent_name, finding in state.findings.items():
+                if finding.agent == "Skeptic" or getattr(finding, "degraded", False):
+                    continue
+
+                for asm in finding.assumptions:
+                    if asm.name in bench_map:
+                        bench_val = bench_map[asm.name]
+                        ratio = asm.base / bench_val if bench_val > 0 else 1.0
+                        if ratio > 1.20 or ratio < 0.80:
+                            critique = Message(
+                                sender="Skeptic",
+                                recipient=finding.agent,
+                                kind="critique",
+                                parameter=asm.name,
+                                challenged_value=asm.base,
+                                benchmark_reference=bench_val,
+                                content=(
+                                    f"Skeptic Critique: {finding.agent}'s proposed {asm.name} of {asm.base} "
+                                    f"deviates significantly from illustrative B2B SaaS benchmark median ({bench_val}). "
+                                    f"Please justify this interval against customer friction and churn risks."
+                                ),
+                            )
+                            critiques.append(critique)
+                    elif asm.high / max(asm.low, 1e-4) > 2.2:
+                        critique = Message(
+                            sender="Skeptic",
+                            recipient=finding.agent,
+                            kind="critique",
+                            parameter=asm.name,
+                            challenged_value=asm.base,
+                            benchmark_reference=None,
+                            content=(
+                                f"Skeptic Critique: {finding.agent}'s proposed {asm.name} interval [{asm.low}, {asm.high}] "
+                                f"exhibits wide uncertainty (>2.2x spread). Please provide operational justification."
+                            ),
+                        )
+                        critiques.append(critique)
+
+            # Fallback critique if all parameters aligned with benchmarks
+            if not critiques:
+                for agent_name, finding in state.findings.items():
+                    if finding.agent != "Skeptic" and finding.assumptions:
+                        top_asm = finding.assumptions[0]
+                        critiques.append(
+                            Message(
+                                sender="Skeptic",
+                                recipient=finding.agent,
+                                kind="critique",
+                                parameter=top_asm.name,
+                                challenged_value=top_asm.base,
+                                content=f"Skeptic Audit: Requesting confirmation of {top_asm.name} baseline ({top_asm.base}).",
+                            )
+                        )
+                        break
+
+            state.messages.extend(critiques)
+
+            # 4. Critiqued agents respond with bounded, evidence-grounded rebuttals
+            rebuttals: List[Message] = []
+            for crit in critiques:
+                target_finding = state.findings.get(crit.recipient)
+                if not target_finding:
+                    continue
+
+                snippet = target_finding.evidence[0].snippet if target_finding.evidence else "internal metrics"
+                source = target_finding.evidence[0].source_type if target_finding.evidence else "operational analysis"
+
+                reb = Message(
+                    sender=crit.recipient,
+                    recipient="Skeptic",
+                    kind="rebuttal",
+                    parameter=crit.parameter,
+                    challenged_value=crit.challenged_value,
+                    benchmark_reference=crit.benchmark_reference,
+                    concession_made=False,
+                    rationale=f"Maintained based on {source}: {snippet}",
+                    content=(
+                        f"Rebuttal from {crit.recipient}: Position maintained on {crit.parameter}. "
+                        f"Our model is calibrated against {snippet}; divergence from macro median is intentional."
+                    ),
+                )
+                rebuttals.append(reb)
+
+            state.messages.extend(rebuttals)
+
+            # 5. Emit event stream notifications
+            for msg in critiques + rebuttals:
                 await self.bus.emit(
                     event_type="message_posted",
                     agent=msg.sender,
@@ -397,7 +513,7 @@ class Supervisor:
 
             return {"status": "discussion_completed", "message_count": len(state.messages)}
 
-        elif kind == "conflict_detection" or "conflict" in task.id:
+        elif kind == "conflict_detection":
             conflicts = detect_conflicts(state.findings, state.tasks)
             state.conflicts = conflicts
             for c in conflicts:
@@ -408,7 +524,7 @@ class Supervisor:
                 )
             return {"status": "conflicts_detected", "count": len(conflicts)}
 
-        elif kind == "skeptic_review" or "skeptic" in task.id:
+        elif kind == "skeptic_review":
             # 1. Execute Skeptic agent against current workflow findings
             skeptic_agent = self.registry.get_agent("Skeptic")
             if skeptic_agent:
@@ -435,100 +551,80 @@ class Supervisor:
             )
             return {"status": "skeptic_review_completed", "challenges_count": len(challenges)}
 
-        elif kind == "simulation" or "simulation" in task.id:
-            # Handle pricing decision simulation
-            if state.decision and state.decision.type == "price_change":
-                from simulation.price_model import (
-                    PRICE_STRAT_A,
-                    PRICE_STRAT_B,
-                    PRICE_STRAT_C,
-                    simulate_price_change,
-                )
+        elif kind == "simulation":
+            from report.decision_logic import extract_min_runway_constraint
+            from simulation.reconcile import reconcile_assumptions
+            from simulation.monte_carlo import run_monte_carlo_suite
+            from simulation.adapter import get_simulator_adapter
 
-                price_strategies = [PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C]
-                core_scenarios = ["conservative", "expected", "optimistic"]
-                for strat in price_strategies:
-                    for scen in core_scenarios:
-                        params = build_scenario_params(state.assumptions, scen)
-                        run = simulate_price_change(strat, scen, params, company=load_company_snapshot(), seed=42)
+            company = load_company_snapshot()
+            adapter = get_simulator_adapter(state.decision.type if state.decision else None)
+
+            # Extract dynamic runway floor from constraints or CFO assumptions
+            min_runway = extract_min_runway_constraint(state.decision.constraints, state.assumptions)
+
+            # Reconcile assumptions once as the single source of truth for the entire workflow
+            state.reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
+
+            # 1. Resolve conflicts via simulation using adapter
+            resolved_conflicts, conflict_sim_runs = resolve_conflicts_with_simulation(
+                state.conflicts,
+                state.findings,
+                company=company,
+                adapter=adapter,
+                min_runway=min_runway,
+            )
+            state.conflicts = resolved_conflicts
+            state.simulation_runs.extend(conflict_sim_runs)
+
+            # 2. Run distinct scenario matrix: 3 strategies x (conservative, expected, optimistic)
+            core_scenarios = ["conservative", "expected", "optimistic"]
+            for strat in adapter.strategies:
+                for scen in core_scenarios:
+                    params = adapter.build_params(state.reconciled.parameters, scen)
+                    run = adapter.simulate(strat, scen, params, company=company, seed=42)
+                    state.simulation_runs.append(run)
+                    await self.bus.emit(
+                        event_type="simulation_run",
+                        agent="Supervisor",
+                        payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
+                    )
+
+            # Stress scenarios for free_plan
+            if adapter.decision_type == "free_plan":
+                stress_scenarios = ["stress_infra_doubles", "stress_conversion_collapse", "stress_large_customer_churn"]
+                base_params = adapter.build_params(state.reconciled.parameters, "expected")
+                for strat in adapter.strategies:
+                    for scen in stress_scenarios:
+                        run = adapter.simulate(strat, scen, base_params, company=company, seed=42)
                         state.simulation_runs.append(run)
                         await self.bus.emit(
                             event_type="simulation_run",
                             agent="Supervisor",
                             payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
                         )
-                # Run Monte Carlo probability distributions for pricing strategies
-                from simulation.monte_carlo import run_monte_carlo_suite
-                from simulation.reconcile import reconcile_assumptions
-                reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
-                mc_results = run_monte_carlo_suite(
-                    strategies=price_strategies,
-                    reconciled_params=reconciled,
-                    company=load_company_snapshot(),
-                    n_iterations=250,
-                    seed=42,
-                    min_runway=10.0,
-                )
-                state.mc_summaries = mc_results
-                return {"status": "pricing_simulations_completed", "runs_count": len(state.simulation_runs)}
-
-            # 1. Resolve conflicts via simulation
-            resolved_conflicts, conflict_sim_runs = resolve_conflicts_with_simulation(state.conflicts, state.findings)
-            state.conflicts = resolved_conflicts
-            state.simulation_runs.extend(conflict_sim_runs)
-
-            # 2. Run distinct scenario matrix: 3 strategies x (conservative, expected, optimistic) + 3 stress scenarios
-            strategies = [STRATEGY_A, STRATEGY_B, STRATEGY_C]
-            core_scenarios = ["conservative", "expected", "optimistic"]
-            stress_scenarios = ["stress_infra_doubles", "stress_conversion_collapse", "stress_large_customer_churn"]
-
-            # Core scenarios with favorable/unfavorable bounds
-            for strat in strategies:
-                for scen in core_scenarios:
-                    params = build_scenario_params(state.assumptions, scen)
-                    run = simulate(strat, scen, params)
-                    state.simulation_runs.append(run)
-                    await self.bus.emit(
-                        event_type="simulation_run",
-                        agent="Supervisor",
-                        payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
-                    )
-
-            # Stress scenarios applied against expected base parameters
-            base_params = build_scenario_params(state.assumptions, "expected")
-            for strat in strategies:
-                for scen in stress_scenarios:
-                    run = simulate(strat, scen, base_params)
-                    state.simulation_runs.append(run)
-                    await self.bus.emit(
-                        event_type="simulation_run",
-                        agent="Supervisor",
-                        payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
-                    )
 
             # 3. Run Monte Carlo probability distributions across all strategies
-            from simulation.monte_carlo import run_monte_carlo_suite
-            from simulation.reconcile import reconcile_assumptions
-            reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
             mc_results = run_monte_carlo_suite(
-                strategies=strategies,
-                reconciled_params=reconciled,
-                company=load_company_snapshot(),
+                strategies=adapter.strategies,
+                reconciled_params=state.reconciled,
+                company=company,
                 n_iterations=250,
                 seed=42,
-                min_runway=10.0,
+                min_runway=min_runway,
+                adapter=adapter,
             )
             state.mc_summaries = mc_results
 
             return {"status": "simulations_completed", "total_runs": len(state.simulation_runs)}
 
-        elif kind == "report_draft" or task.id == "task_report_draft":
+        elif kind == "report_draft":
             company = load_company_snapshot()
             draft_report = build_consolidated_report(state, company)
             state.report = draft_report
             return {"status": "report_draft_ready"}
 
-        elif kind == "verification" or "verification" in task.id:
+        elif kind == "verification":
             company = load_company_snapshot()
             if state.report is None:
                 state.report = build_consolidated_report(state, company)
@@ -544,11 +640,44 @@ class Supervisor:
 
             # Bounded loop-back (up to 2 loops)
             loop = 0
+            prev_failures = None
             while not all_passed and loop < 2:
                 loop += 1
                 task.attempts += 1
-                logger.warning("Verification failed (attempt %d/2). Rebuilding draft report...", loop)
-                state.report = build_consolidated_report(state, company)
+                failed_checks = [r for r in results if r.status == "failed"]
+                failure_signatures = tuple(sorted(r.detail for r in failed_checks))
+                if failure_signatures == prev_failures:
+                    logger.warning("Verification loopback produced identical failure set; stopping loop-back early.")
+                    break
+                prev_failures = failure_signatures
+
+                # Map failures to the responsible tasks
+                failed_names = {r.check_name for r in failed_checks}
+                target_tasks = []
+                if "report_number_traceability" in failed_names or "scenario_ordering" in failed_names:
+                    target_tasks.extend(["simulation", "report_draft"])
+                elif "required_sections_present" in failed_names:
+                    target_tasks.append("report_draft")
+                elif "provenance_integrity" in failed_names or "unit_consistency" in failed_names:
+                    target_tasks.extend(["skeptic_review", "report_draft"])
+                else:
+                    target_tasks.append("report_draft")
+
+                await self.bus.emit(
+                    event_type="verification_loopback",
+                    agent="Supervisor",
+                    payload={"loop": loop, "target_tasks": target_tasks, "failed_checks": list(failed_names)},
+                )
+
+                # Re-dispatch mapped tasks
+                for target_kind in target_tasks:
+                    sub_task = Task(id=f"loop_{loop}_{target_kind}", name=f"Re-dispatch {target_kind}", kind=target_kind, owner_agent="Supervisor")
+                    await self._execute_single_task(sub_task, state)
+
+                # Fresh checkpoint
+                self.checkpoints.save_checkpoint(state, f"{task.id}_loop_{loop}")
+
+                # Re-verify
                 all_passed, results = verify_workflow(
                     state.assumptions,
                     state.simulation_runs,
@@ -575,7 +704,7 @@ class Supervisor:
                 )
                 return {"status": "verification_failed", "results": [r.model_dump() for r in results]}
 
-        elif kind == "report_finalize" or "report" in task.id:
+        elif kind == "report_finalize":
             company = load_company_snapshot()
             report_dict = build_consolidated_report(state, company)
             has_failed_check = any(r.status == "failed" for r in state.verification_results)
@@ -595,6 +724,5 @@ class Supervisor:
             )
             return {"status": "report_ready", "report_id": f"rep-{state.decision.id}"}
 
-        return {"status": "done"}
-
-        return {"status": "done"}
+        else:
+            raise ValueError(f"Unknown or unsupported supervisor task kind: '{kind}' for task '{task.id}'")

@@ -22,5 +22,14 @@
     "illustrative": true,
     "sourced": false,
     "notes": "Illustrative ticket submission rate per active free tier user."
+  },
+  "price_elasticity_b2b_median": {
+    "metric": "price_elasticity_starter",
+    "value": 0.65,
+    "unit": "ratio",
+    "illustrative": true,
+    "sourced": false,
+    "notes": "Illustrative synthetic B2B SaaS benchmark for entry-tier price elasticity."
   }
 }
+

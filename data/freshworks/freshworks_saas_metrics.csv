@@ -1,0 +1,7 @@
+fiscal_year,ending_arr_usd,total_paying_customers,customers_over_5k_arr,customers_over_50k_arr,net_dollar_retention_rate_pct,arpu_annual_usd,gross_margin_pct,aws_infra_spend_pct_rev,blended_logo_churn_annual_pct,blended_logo_churn_monthly_pct
+2019,180000000,42900,8400,900,115.0,4018.5,78.85,7.8,18.0,1.63
+2020,275000000,48500,11200,1350,112.0,5149.4,78.98,7.5,16.5,1.48
+2021,415000000,56000,14800,1950,114.0,6625.4,78.97,7.1,15.2,1.35
+2022,545000000,63400,18200,2300,108.0,7854.9,80.77,6.7,14.8,1.31
+2023,655000000,67100,20261,2750,108.0,8888.7,82.67,6.3,14.2,1.26
+2024,795000000,72200,22558,3250,103.0,9977.8,83.55,5.9,13.5,1.19

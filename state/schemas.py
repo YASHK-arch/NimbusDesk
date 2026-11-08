@@ -62,6 +62,11 @@ class Message(BaseModel):
     recipient: str  # agent name or "all"
     kind: Literal["proposal", "critique", "rebuttal", "query"]
     content: str
+    parameter: Optional[str] = None
+    challenged_value: Optional[float] = None
+    benchmark_reference: Optional[float] = None
+    concession_made: bool = False
+    rationale: Optional[str] = None
     assumptions: List[Assumption] = Field(default_factory=list)
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -107,9 +112,9 @@ class Conflict(BaseModel):
     resolution: Optional[str] = None
     simulation_ids: List[str] = Field(default_factory=list)
     resolved: bool = False
-    status: Literal["detected", "resolved_immaterial", "resolved_converged", "unresolved_material"] = "detected"
+    status: Literal["detected", "resolved_immaterial", "resolved_converged", "unresolved_material", "resolved_simulation"] = "detected"
     verdict: Optional[Literal["decision_relevant", "immaterial"]] = None
-    resolution_method: Optional[Literal["simulation_immaterial", "converged_after_rebuttal", "unresolved"]] = None
+    resolution_method: Optional[str] = None
 
 
 class SimulationRun(BaseModel):
@@ -151,6 +156,7 @@ class WorkflowEvent(BaseModel):
         "recovery_done",
         "verification_passed",
         "verification_failed",
+        "verification_loopback",
         "report_ready",
         "decision_approved",
     ]

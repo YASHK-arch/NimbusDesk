@@ -114,11 +114,19 @@ def decompose_decision(decision: Decision) -> TaskDAG:
         )
         dag.add_task(discussion_task)
 
+        conflict_task = Task(
+            id="task_conflict_detection",
+            owner_agent="Supervisor",
+            kind="conflict_detection",
+            depends_on=[discussion_task.id],
+        )
+        dag.add_task(conflict_task)
+
         skeptic_task = Task(
             id="task_skeptic_price_audit",
             owner_agent="Skeptic",
             kind="skeptic_review",
-            depends_on=[discussion_task.id],
+            depends_on=[conflict_task.id],
         )
         dag.add_task(skeptic_task)
 

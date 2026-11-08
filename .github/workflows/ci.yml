@@ -22,12 +22,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools wheel
           pip install -e ".[dev]"
 
       - name: Run Pytest Test Suite
         env:
           LLM_MODE: mock
+          PYTHONPATH: .
         run: |
           pytest tests/ -v
 
@@ -50,6 +51,40 @@ jobs:
         working-directory: ui
         run: npm ci
 
+      - name: Verify No Fake Numbers
+        working-directory: ui
+        run: npm run check:fake-numbers
+
       - name: Build Frontend Application
         working-directory: ui
         run: npm run build
+
+  acceptance-audit:
+    name: Acceptance Audit Suite (V1 & V2)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev]"
+
+      - name: Run Acceptance Tests (Mock Mode)
+        env:
+          LLM_MODE: mock
+          PYTHONPATH: .
+        run: |
+          pytest tests/test_acceptance.py tests/test_acceptance_v2.py -v
+

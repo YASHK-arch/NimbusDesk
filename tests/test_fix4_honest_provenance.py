@@ -81,3 +81,4 @@ def test_infra_headroom_reads_from_company_snapshot():
     assert "max_safe_free_users_without_sharding" in company.infra
     result = get_infra_headroom(active_free_users=1000)
     assert result["max_safe_free_users_without_sharding"] == company.infra["max_safe_free_users_without_sharding"]
+

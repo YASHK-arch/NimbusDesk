@@ -35,7 +35,60 @@ class CFOAgent(BaseAgent):
             allowed_tools=[get_financial_summary, calculate_runway_impact],
         )
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
+        if decision_type == "price_change":
+            return Finding(
+                agent=self.name,
+                task_id=task_id,
+                claim="Pricing adjustments improve gross margins but entry-tier elasticity above 0.70 risks contraction; cautious elasticity parameters required to protect runway.",
+                recommendation="proceed_with_limits",
+                confidence=0.85,
+                assumptions=[
+                    Assumption(
+                        name="price_elasticity_starter",
+                        low=0.40,
+                        base=0.60,
+                        high=0.85,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.75,
+                        proposed_by=self.name,
+                    ),
+                    Assumption(
+                        name="contraction_risk_rate",
+                        low=0.02,
+                        base=0.04,
+                        high=0.08,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.70,
+                        proposed_by=self.name,
+                    ),
+                    Assumption(
+                        name="expansion_revenue_rate",
+                        low=0.05,
+                        base=0.08,
+                        high=0.12,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.70,
+                        proposed_by=self.name,
+                    ),
+                ],
+                evidence=[
+                    Evidence(
+                        source_type="company_data",
+                        source_ref="data/synthetic_company.json#mrr",
+                        snippet="Current MRR is $89.7k across 1,447 paying customers. Price increases must protect net retention.",
+                    )
+                ],
+                limitations=["Assumes macroeconomic software spending remains flat."],
+                status="ok",
+            )
+
         return Finding(
             agent=self.name,
             task_id=task_id,
@@ -102,7 +155,60 @@ class GrowthAgent(BaseAgent):
             allowed_tools=[get_funnel_metrics],
         )
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
+        if decision_type == "price_change":
+            return Finding(
+                agent=self.name,
+                task_id=task_id,
+                claim="Market demand exhibits low elasticity; a 20% Starter hike will encounter minimal churn (elasticity 0.20-0.50) while expansion features accelerate net expansion to 14%.",
+                recommendation="proceed",
+                confidence=0.88,
+                assumptions=[
+                    Assumption(
+                        name="price_elasticity_starter",
+                        low=0.20,
+                        base=0.35,
+                        high=0.50,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.80,
+                        proposed_by=self.name,
+                    ),
+                    Assumption(
+                        name="price_elasticity_growth",
+                        low=0.15,
+                        base=0.25,
+                        high=0.40,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.75,
+                        proposed_by=self.name,
+                    ),
+                    Assumption(
+                        name="expansion_revenue_rate",
+                        low=0.08,
+                        base=0.14,
+                        high=0.20,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.75,
+                        proposed_by=self.name,
+                    ),
+                ],
+                evidence=[
+                    Evidence(
+                        source_type="company_data",
+                        source_ref="data/synthetic_company.json#plans",
+                        snippet="Starter tier is priced at $49/mo; competitive willingness-to-pay benchmark indicates capacity up to $59/mo.",
+                    )
+                ],
+                limitations=["Assumes core product quality and uptime remain high."],
+                status="ok",
+            )
+
         return Finding(
             agent=self.name,
             task_id=task_id,
@@ -169,7 +275,7 @@ class CTOAgent(BaseAgent):
             allowed_tools=[get_infra_headroom, get_engineering_capacity],
         )
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
         return Finding(
             agent=self.name,
             task_id=task_id,
@@ -225,7 +331,49 @@ class CustomerAgent(BaseAgent):
             allowed_tools=[get_support_capacity],
         )
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
+        if decision_type == "price_change":
+            return Finding(
+                agent=self.name,
+                task_id=task_id,
+                claim="Customer sensitivity on the entry-level Starter tier is high; price hikes without grandfathering risk elevated churn and account downgrades.",
+                recommendation="proceed_with_limits",
+                confidence=0.78,
+                assumptions=[
+                    Assumption(
+                        name="price_elasticity_starter",
+                        low=0.75,
+                        base=0.95,
+                        high=1.30,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.70,
+                        proposed_by=self.name,
+                    ),
+                    Assumption(
+                        name="contraction_risk_rate",
+                        low=0.05,
+                        base=0.09,
+                        high=0.15,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.70,
+                        proposed_by=self.name,
+                    ),
+                ],
+                evidence=[
+                    Evidence(
+                        source_type="company_data",
+                        source_ref="data/synthetic_company.json#plans",
+                        snippet="Current Starter churn is 2.5% monthly; price increase without grandfathering risks spiking cancellation.",
+                    )
+                ],
+                limitations=["Assumes customer support response times remain within SLA."],
+                status="ok",
+            )
+
         return Finding(
             agent=self.name,
             task_id=task_id,
@@ -267,7 +415,7 @@ class ProductAgent(BaseAgent):
             allowed_tools=[get_engineering_capacity],
         )
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
         return Finding(
             agent=self.name,
             task_id=task_id,
@@ -312,7 +460,39 @@ class SkepticAgent(BaseAgent):
             allowed_tools=[get_financial_summary, get_funnel_metrics],
         )
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
+        if decision_type == "price_change":
+            return Finding(
+                agent=self.name,
+                task_id=task_id,
+                claim="Growth elasticity estimate (0.35) assumes negligible customer churn; historical price hikes in B2B SaaS show starter elasticity often exceeds 0.70.",
+                recommendation="proceed_with_limits",
+                confidence=0.75,
+                assumptions=[
+                    Assumption(
+                        name="price_elasticity_starter",
+                        low=0.55,
+                        base=0.70,
+                        high=0.90,
+                        unit="ratio",
+                        provenance="ai_assumption",
+                        source_ref="mock: illustrative assumption",
+                        confidence=0.70,
+                        proposed_by=self.name,
+                        challenged_by_skeptic=True,
+                    )
+                ],
+                evidence=[
+                    Evidence(
+                        source_type="benchmark",
+                        source_ref="data/benchmarks.json#price_elasticity_b2b_median",
+                        snippet="B2B SaaS pricing benchmark indicates entry-tier elasticity commonly ranges between 0.60 and 0.85.",
+                    )
+                ],
+                limitations=["Assumes competitor pricing structures remain static."],
+                status="ok",
+            )
+
         return Finding(
             agent=self.name,
             task_id=task_id,
@@ -367,7 +547,52 @@ class BackupAnalyst(BaseAgent):
         """Provide conservative fallback assumptions with high uncertainty bounds."""
         assumptions: List[Assumption] = []
         name_lower = failed_agent_name.lower()
-        if "growth" in name_lower:
+        is_price = "price" in task_id.lower() or "price" in disputed_area.lower()
+
+        if is_price:
+            if "growth" in name_lower:
+                assumptions.append(
+                    Assumption(
+                        name="price_elasticity_starter",
+                        low=0.20,
+                        base=0.45,
+                        high=0.70,
+                        unit="ratio",
+                        provenance="fallback_degraded",
+                        source_ref="fallback: BackupAnalyst conservative default",
+                        confidence=0.25,
+                        proposed_by=self.name,
+                    )
+                )
+            elif "customer" in name_lower or "support" in name_lower:
+                assumptions.append(
+                    Assumption(
+                        name="price_elasticity_starter",
+                        low=0.60,
+                        base=0.90,
+                        high=1.35,
+                        unit="ratio",
+                        provenance="fallback_degraded",
+                        source_ref="fallback: BackupAnalyst conservative default",
+                        confidence=0.25,
+                        proposed_by=self.name,
+                    )
+                )
+            else:
+                assumptions.append(
+                    Assumption(
+                        name="price_elasticity_starter",
+                        low=0.45,
+                        base=0.70,
+                        high=1.05,
+                        unit="ratio",
+                        provenance="fallback_degraded",
+                        source_ref="fallback: BackupAnalyst conservative default",
+                        confidence=0.25,
+                        proposed_by=self.name,
+                    )
+                )
+        elif "growth" in name_lower:
             assumptions.append(
                 Assumption(
                     name="free_to_paid_conversion",
@@ -376,8 +601,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.022,
                     unit="ratio",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -389,8 +614,8 @@ class BackupAnalyst(BaseAgent):
                     high=3500.0,
                     unit="users",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -403,8 +628,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.30,
                     unit="ratio",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -417,8 +642,8 @@ class BackupAnalyst(BaseAgent):
                     high=3.00,
                     unit="USD",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -431,8 +656,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.15,
                     unit="tickets/user/mo",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.40,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -445,8 +670,8 @@ class BackupAnalyst(BaseAgent):
                     high=0.05,
                     unit="ratio",
                     provenance="fallback_degraded",
-                    source_ref="fallback: conservative contingency estimate",
-                    confidence=0.30,
+                    source_ref="fallback: BackupAnalyst conservative default",
+                    confidence=0.25,
                     proposed_by=self.name,
                 )
             )
@@ -456,7 +681,7 @@ class BackupAnalyst(BaseAgent):
             task_id=task_id,
             claim=f"Conservative fallback assumptions provided for {disputed_area} with high uncertainty bounds due to failed {failed_agent_name} analysis.",
             recommendation="proceed_with_limits",
-            confidence=0.35,
+            confidence=0.25,
             assumptions=assumptions,
             evidence=[
                 Evidence(
@@ -471,5 +696,5 @@ class BackupAnalyst(BaseAgent):
             degraded_reason=f"Substituted for failed {failed_agent_name}",
         )
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
         return self.generate_fallback_finding(task_id, "Specialist")

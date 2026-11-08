@@ -18,7 +18,9 @@ dependencies = [
     "networkx>=3.2.0",
     "httpx>=0.27.0",
     "python-dotenv>=1.0.1",
-    "aiosqlite>=0.20.0"
+    "aiosqlite>=0.20.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0"
 ]
 
 [project.optional-dependencies]
@@ -32,3 +34,12 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 python_files = "test_*.py"
+markers = [
+    "requires_cassettes: marks tests requiring pre-recorded LLM cassettes"
+]
+addopts = "-m 'not requires_cassettes'"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agents*", "api*", "conflict*", "orchestrator*", "report*", "simulation*", "state*", "verification*"]
+exclude = ["tests*", "docs*", "ui*"]
