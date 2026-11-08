@@ -19,6 +19,28 @@ from state.schemas import CompanySnapshot
 from state.shared_state import WorkflowState
 
 
+class NumberRegistry:
+    """Registry tracking every numeric value placed in the report with its source tag and formatted representation."""
+
+    def __init__(self) -> None:
+        self.entries: List[Dict[str, Any]] = []
+
+    def n(self, value: float | int, source: str, formatted: Optional[str] = None) -> float:
+        try:
+            val_float = float(value)
+        except (ValueError, TypeError):
+            val_float = 0.0
+        self.entries.append({
+            "value": val_float,
+            "source": source,
+            "formatted": formatted or str(value),
+        })
+        return val_float
+
+    def to_list(self) -> List[Dict[str, Any]]:
+        return list(self.entries)
+
+
 def build_consolidated_report(
     state: WorkflowState,
     company: Optional[CompanySnapshot] = None,
@@ -27,12 +49,15 @@ def build_consolidated_report(
     if company is None:
         company = load_company_snapshot()
 
+    reg = NumberRegistry()
+
     # 1. Evaluate minimum runway constraint and rank strategies
     min_runway = extract_min_runway_constraint(
         constraints=state.decision.constraints if state.decision else None,
         assumptions=state.assumptions,
         default_min_runway=10.0,
     )
+    reg.n(min_runway, "constraint:min_runway", f"{min_runway:.1f}")
     ranked = rank_strategies(state.simulation_runs, min_runway=min_runway)
 
     # Detect degraded agents and unresolved conflicts for honest confidence scoring
@@ -66,14 +91,14 @@ def build_consolidated_report(
     company_position = {
         "company_name": company.name,
         "tagline": company.tagline,
-        "mrr": company.mrr,
-        "arr": company.arr,
-        "runway_months": company.runway_months,
-        "cash_balance": company.cash_balance,
-        "paying_customers": company.total_paying_customers,
-        "monthly_net_burn": company.monthly_burn,
-        "infra_monthly_cost": company.infra["current_monthly_cost"],
-        "support_reps": company.support["headcount"],
+        "mrr": reg.n(company.mrr, "company:mrr", f"${company.mrr:,.2f}"),
+        "arr": reg.n(company.arr, "company:arr", f"${company.arr:,.2f}"),
+        "runway_months": reg.n(company.runway_months, "company:runway_months", f"{company.runway_months:.1f}mo"),
+        "cash_balance": reg.n(company.cash_balance, "company:cash_balance", f"${company.cash_balance:,.2f}"),
+        "paying_customers": reg.n(company.total_paying_customers, "company:paying_customers"),
+        "monthly_net_burn": reg.n(company.monthly_burn, "company:monthly_net_burn", f"${company.monthly_burn:,.2f}"),
+        "infra_monthly_cost": reg.n(company.infra["current_monthly_cost"], "company:infra_monthly_cost", f"${company.infra['current_monthly_cost']:,.2f}"),
+        "support_reps": reg.n(company.support["headcount"], "company:support_reps"),
         "is_synthetic": True,
     }
 
@@ -98,16 +123,23 @@ def build_consolidated_report(
         conservative = strat_scenarios.get("conservative", {})
         optimistic = strat_scenarios.get("optimistic", {})
 
+        m_exp = reg.n(expected.get("mrr_month_12", 0.0), f"sim:{strat}:expected:mrr_month_12")
+        m_con = reg.n(conservative.get("mrr_month_12", 0.0), f"sim:{strat}:conservative:mrr_month_12")
+        m_opt = reg.n(optimistic.get("mrr_month_12", 0.0), f"sim:{strat}:optimistic:mrr_month_12")
+        r_exp = reg.n(expected.get("runway_months_12", 0.0), f"sim:{strat}:expected:runway_months_12")
+        net_12 = reg.n(expected.get("net_contribution_12", 0.0), f"sim:{strat}:expected:net_contribution_12")
+        net_24 = reg.n(expected.get("net_contribution_24", 0.0), f"sim:{strat}:expected:net_contribution_24")
+
         scenario_table.append({
             "strategy": strat,
-            "mrr_month_12_expected": expected.get("mrr_month_12", 0.0),
-            "mrr_month_12_conservative": conservative.get("mrr_month_12", 0.0),
-            "mrr_month_12_optimistic": optimistic.get("mrr_month_12", 0.0),
-            "runway_months_12_expected": expected.get("runway_months_12", 0.0),
+            "mrr_month_12_expected": m_exp,
+            "mrr_month_12_conservative": m_con,
+            "mrr_month_12_optimistic": m_opt,
+            "runway_months_12_expected": r_exp,
             "gross_margin_12_expected": expected.get("gross_margin_month_12", 0.0),
             "support_headcount_12": expected.get("support_headcount_12", company.support["headcount"]),
-            "net_contribution_12": expected.get("net_contribution_12", 0.0),
-            "net_contribution_24": expected.get("net_contribution_24", 0.0),
+            "net_contribution_12": net_12,
+            "net_contribution_24": net_24,
         })
 
     # 4. Conflict Resolution Summary
@@ -135,11 +167,23 @@ def build_consolidated_report(
         reconciled=reconciled,
         company=company,
     )
+    for item in tornado_data:
+        pname = item.get("assumption_name") or item.get("param") or "param"
+        low_val = item.get("low_outcome", item.get("low_mrr", 0.0))
+        high_val = item.get("high_outcome", item.get("high_mrr", 0.0))
+        reg.n(item.get("swing", 0.0), f"tornado:{pname}:swing")
+        reg.n(low_val, f"tornado:{pname}:low_val")
+        reg.n(high_val, f"tornado:{pname}:high_val")
+
     flip_point_data = find_flip_point(
         primary_strategy=top_strat_candidate,
         competing_strategy=competitor_candidate,
         company=company,
     )
+    if flip_point_data.get("exists") and flip_point_data.get("flip_value") is not None:
+        reg.n(flip_point_data["flip_value"], f"flip:{flip_point_data.get('disputed_param', 'param')}:flip_value")
+        if "current_base" in flip_point_data:
+            reg.n(flip_point_data["current_base"], f"flip:{flip_point_data.get('disputed_param', 'param')}:current_base")
 
     # Determine dynamic recommendation and headline thesis
     flip_display = flip_point_data.get("threshold_display", "the modeled threshold")
@@ -147,6 +191,10 @@ def build_consolidated_report(
         top_strat = ranked[0]
         primary_strategy = top_strat.strategy
         recommendation = f"Adopt {primary_strategy} based on Net Retention and Expansion Profile"
+        reg.n(top_strat.mrr_month_12, f"sim:{top_strat.strategy}:expected:mrr_month_12")
+        reg.n(top_strat.mrr_month_12 * 12, f"calc:{top_strat.strategy}:expected:arr")
+        reg.n(top_strat.runway_months_12, f"sim:{top_strat.strategy}:expected:runway_months_12")
+        reg.n(top_strat.net_contribution_12, f"sim:{top_strat.strategy}:expected:net_contribution_12")
         headline_thesis = (
             f"Adopting {primary_strategy} projects Month 12 MRR of ${top_strat.mrr_month_12:,.0f} "
             f"(${top_strat.mrr_month_12 * 12:,.0f} ARR) with {top_strat.runway_months_12:.1f} months runway and "
@@ -156,6 +204,10 @@ def build_consolidated_report(
         top_strat = ranked[0]
         primary_strategy = top_strat.strategy
         recommendation = f"Proceed with {primary_strategy} under Stated Guardrails"
+        reg.n(top_strat.mrr_month_12, f"sim:{top_strat.strategy}:expected:mrr_month_12")
+        reg.n(top_strat.mrr_month_12 * 12, f"calc:{top_strat.strategy}:expected:arr")
+        reg.n(top_strat.runway_months_12, f"sim:{top_strat.strategy}:expected:runway_months_12")
+        reg.n(top_strat.net_contribution_12, f"sim:{top_strat.strategy}:expected:net_contribution_12")
         if flip_point_data.get("exists", True) and flip_point_data.get("flip_value") is not None:
             flip_qualifier = f"The recommendation holds as long as conversion remains above {flip_display}."
         else:
@@ -282,24 +334,37 @@ def build_consolidated_report(
                 mrr_dist = mc.get("mrr_month_12", {})
                 runway_dist = mc.get("runway_months_12", {})
                 net_dist = mc.get("net_contribution_12", {})
+
+                m_p10 = reg.n(mrr_dist.get("p10", 0.0), f"mc:{strat}:mrr_month_12:p10")
+                m_p50 = reg.n(mrr_dist.get("p50", 0.0), f"mc:{strat}:mrr_month_12:p50")
+                m_p90 = reg.n(mrr_dist.get("p90", 0.0), f"mc:{strat}:mrr_month_12:p90")
+                r_p10 = reg.n(runway_dist.get("p10", 0.0), f"mc:{strat}:runway_months_12:p10")
+                r_p50 = reg.n(runway_dist.get("p50", 0.0), f"mc:{strat}:runway_months_12:p50")
+                r_p90 = reg.n(runway_dist.get("p90", 0.0), f"mc:{strat}:runway_months_12:p90")
+                n_p10 = reg.n(net_dist.get("p10", 0.0), f"mc:{strat}:net_contribution_12:p10")
+                n_p50 = reg.n(net_dist.get("p50", 0.0), f"mc:{strat}:net_contribution_12:p50")
+                n_p90 = reg.n(net_dist.get("p90", 0.0), f"mc:{strat}:net_contribution_12:p90")
+                p_best = reg.n(mc.get("p_best", 0.0), f"mc:{strat}:p_best")
+                p_feasible = reg.n(mc.get("p_feasible", 0.0), f"mc:{strat}:p_feasible")
+
                 outcome_ranges.append({
                     "strategy": strat,
                     "n_iterations": mc.get("n_iterations", 250),
                     "seed": mc.get("seed", 42),
-                    "p_best": mc.get("p_best", 0.0),
-                    "p_feasible": mc.get("p_feasible", 0.0),
+                    "p_best": p_best,
+                    "p_feasible": p_feasible,
                     "mrr_month_12": mrr_dist,
-                    "mrr_month_12_p10": mrr_dist.get("p10", 0.0),
-                    "mrr_month_12_p50": mrr_dist.get("p50", 0.0),
-                    "mrr_month_12_p90": mrr_dist.get("p90", 0.0),
+                    "mrr_month_12_p10": m_p10,
+                    "mrr_month_12_p50": m_p50,
+                    "mrr_month_12_p90": m_p90,
                     "runway_months_12": runway_dist,
-                    "runway_months_12_p10": runway_dist.get("p10", 0.0),
-                    "runway_months_12_p50": runway_dist.get("p50", 0.0),
-                    "runway_months_12_p90": runway_dist.get("p90", 0.0),
+                    "runway_months_12_p10": r_p10,
+                    "runway_months_12_p50": r_p50,
+                    "runway_months_12_p90": r_p90,
                     "net_contribution_12": net_dist,
-                    "net_contribution_12_p10": net_dist.get("p10", 0.0),
-                    "net_contribution_12_p50": net_dist.get("p50", 0.0),
-                    "net_contribution_12_p90": net_dist.get("p90", 0.0),
+                    "net_contribution_12_p10": n_p10,
+                    "net_contribution_12_p50": n_p50,
+                    "net_contribution_12_p90": n_p90,
                     "histograms": mc.get("histograms", {}),
                 })
 
@@ -313,6 +378,7 @@ def build_consolidated_report(
         "confidence_score": confidence_data["score"],
         "confidence_reasons": confidence_data["reasons"],
         "llm_mode": llm_badge,
+        "number_registry": reg.to_list(),
         "disclaimer": (
             "SIMULATION DISCLAIMER: All outputs in this report are generated by deterministic multi-agent simulations "
             "based on explicitly stated parameter ranges. They do not constitute guaranteed financial outcomes. "

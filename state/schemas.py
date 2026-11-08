@@ -156,6 +156,7 @@ class WorkflowEvent(BaseModel):
         "recovery_done",
         "verification_passed",
         "verification_failed",
+        "verification_loopback",
         "report_ready",
         "decision_approved",
     ]

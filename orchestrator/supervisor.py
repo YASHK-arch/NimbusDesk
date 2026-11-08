@@ -664,11 +664,44 @@ class Supervisor:
 
             # Bounded loop-back (up to 2 loops)
             loop = 0
+            prev_failures = None
             while not all_passed and loop < 2:
                 loop += 1
                 task.attempts += 1
-                logger.warning("Verification failed (attempt %d/2). Rebuilding draft report...", loop)
-                state.report = build_consolidated_report(state, company)
+                failed_checks = [r for r in results if r.status == "failed"]
+                failure_signatures = tuple(sorted(r.detail for r in failed_checks))
+                if failure_signatures == prev_failures:
+                    logger.warning("Verification loopback produced identical failure set; stopping loop-back early.")
+                    break
+                prev_failures = failure_signatures
+
+                # Map failures to the responsible tasks
+                failed_names = {r.check_name for r in failed_checks}
+                target_tasks = []
+                if "report_number_traceability" in failed_names or "scenario_ordering" in failed_names:
+                    target_tasks.extend(["simulation", "report_draft"])
+                elif "required_sections_present" in failed_names:
+                    target_tasks.append("report_draft")
+                elif "provenance_integrity" in failed_names or "unit_consistency" in failed_names:
+                    target_tasks.extend(["skeptic_review", "report_draft"])
+                else:
+                    target_tasks.append("report_draft")
+
+                await self.bus.emit(
+                    event_type="verification_loopback",
+                    agent="Supervisor",
+                    payload={"loop": loop, "target_tasks": target_tasks, "failed_checks": list(failed_names)},
+                )
+
+                # Re-dispatch mapped tasks
+                for target_kind in target_tasks:
+                    sub_task = Task(id=f"loop_{loop}_{target_kind}", name=f"Re-dispatch {target_kind}", kind=target_kind, owner_agent="Supervisor")
+                    await self._execute_single_task(sub_task, state)
+
+                # Fresh checkpoint
+                self.checkpoints.save_checkpoint(state, f"{task.id}_loop_{loop}")
+
+                # Re-verify
                 all_passed, results = verify_workflow(
                     state.assumptions,
                     state.simulation_runs,
