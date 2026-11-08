@@ -1,0 +1,70 @@
+{
+  "name": "Freshworks",
+  "tagline": "AI-powered customer service and IT service management platform for modern businesses",
+  "currency": "USD",
+  "is_synthetic": false,
+  "mrr": 49702666.0,
+  "arr": 596432000.0,
+  "cash_balance": 1187600000.0,
+  "monthly_gross_burn": 55269583.0,
+  "monthly_burn": 5566917.0,
+  "runway_months": 213.3,
+  "total_paying_customers": 67100,
+  "blended_churn_monthly_pct": 1.26,
+  "cac_blended": 4850.0,
+  "ltv_blended": 28500.0,
+  "current_free_users": 145000,
+  "plans": [
+    {
+      "plan_name": "Growth",
+      "price_per_month": 29.0,
+      "active_customers": 38200,
+      "mrr": 16617000.0,
+      "churn_monthly_pct": 1.95
+    },
+    {
+      "plan_name": "Pro",
+      "price_per_month": 79.0,
+      "active_customers": 23150,
+      "mrr": 23772000.0,
+      "churn_monthly_pct": 1.10
+    },
+    {
+      "plan_name": "Enterprise",
+      "price_per_month": 129.0,
+      "active_customers": 5750,
+      "mrr": 9313666.0,
+      "churn_monthly_pct": 0.72
+    }
+  ],
+  "support": {
+    "headcount": 480,
+    "team_cost_monthly": 2880000.0,
+    "paid_ticket_rate_per_user_month": 0.18,
+    "cost_per_ticket": 14.50,
+    "max_tickets_per_rep_month": 450,
+    "total_monthly_tickets": 120780,
+    "free_user_ticket_rate_estimate": 0.045
+  },
+  "infra": {
+    "current_monthly_cost": 3130000.0,
+    "paid_user_cost_per_month": 38.50,
+    "free_user_marginal_cost_per_month": 0.85,
+    "database_cluster_utilization_pct": 64.0,
+    "max_concurrent_connections_headroom_pct": 36.0,
+    "max_safe_free_users_without_sharding": 500000
+  },
+  "funnel": {
+    "monthly_unique_visitors": 3200000,
+    "visitor_to_trial_signup_pct": 2.4,
+    "trial_to_paid_conversion_pct": 14.8,
+    "sales_cycle_days": 32,
+    "estimated_free_tier_monthly_signups": 28000
+  },
+  "engineering_capacity": {
+    "total_engineers": 1450,
+    "dedicated_to_core_product": 980,
+    "dedicated_to_infra_and_billing": 470,
+    "free_tier_dev_effort_weeks": 6.0
+  }
+}
