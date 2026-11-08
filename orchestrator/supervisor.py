@@ -383,7 +383,7 @@ class Supervisor:
         """Internal handler for orchestrator synthesis, conflict resolution, skeptic review, and verification tasks."""
         kind = getattr(task, "kind", None)
 
-        if kind == "agent_discussion" or "discussion" in task.id:
+        if kind == "agent_discussion":
             from pathlib import Path
             import json
 
@@ -513,7 +513,7 @@ class Supervisor:
 
             return {"status": "discussion_completed", "message_count": len(state.messages)}
 
-        elif kind == "conflict_detection" or "conflict" in task.id:
+        elif kind == "conflict_detection":
             conflicts = detect_conflicts(state.findings, state.tasks)
             state.conflicts = conflicts
             for c in conflicts:
@@ -524,7 +524,7 @@ class Supervisor:
                 )
             return {"status": "conflicts_detected", "count": len(conflicts)}
 
-        elif kind == "skeptic_review" or "skeptic" in task.id:
+        elif kind == "skeptic_review":
             # 1. Execute Skeptic agent against current workflow findings
             skeptic_agent = self.registry.get_agent("Skeptic")
             if skeptic_agent:
@@ -551,7 +551,7 @@ class Supervisor:
             )
             return {"status": "skeptic_review_completed", "challenges_count": len(challenges)}
 
-        elif kind == "simulation" or "simulation" in task.id:
+        elif kind == "simulation":
             from report.decision_logic import extract_min_runway_constraint
             from simulation.reconcile import reconcile_assumptions
             from simulation.monte_carlo import run_monte_carlo_suite
@@ -618,13 +618,13 @@ class Supervisor:
 
             return {"status": "simulations_completed", "total_runs": len(state.simulation_runs)}
 
-        elif kind == "report_draft" or task.id == "task_report_draft":
+        elif kind == "report_draft":
             company = load_company_snapshot()
             draft_report = build_consolidated_report(state, company)
             state.report = draft_report
             return {"status": "report_draft_ready"}
 
-        elif kind == "verification" or "verification" in task.id:
+        elif kind == "verification":
             company = load_company_snapshot()
             if state.report is None:
                 state.report = build_consolidated_report(state, company)
@@ -704,7 +704,7 @@ class Supervisor:
                 )
                 return {"status": "verification_failed", "results": [r.model_dump() for r in results]}
 
-        elif kind == "report_finalize" or "report" in task.id:
+        elif kind == "report_finalize":
             company = load_company_snapshot()
             report_dict = build_consolidated_report(state, company)
             has_failed_check = any(r.status == "failed" for r in state.verification_results)
@@ -724,6 +724,5 @@ class Supervisor:
             )
             return {"status": "report_ready", "report_id": f"rep-{state.decision.id}"}
 
-        return {"status": "done"}
-
-        return {"status": "done"}
+        else:
+            raise ValueError(f"Unknown or unsupported supervisor task kind: '{kind}' for task '{task.id}'")

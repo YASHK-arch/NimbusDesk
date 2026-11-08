@@ -56,21 +56,41 @@
 | **Round 2 — Fix 6** | NumberRegistry, Strict Non-Vacuous Verification, Prose Number Scanner, and Meaningful Loop-back | **COMPLETED** | Implemented `NumberRegistry` in `report/report_builder.py` wrapping all numerical metrics with traceable source tags and attaching registry to reports. `verify_workflow` enforces non-vacuous failures when reports are missing, monotonic scenario ordering (MRR, net contribution, runway), non-empty section presence, exact source-resolution against simulations/snapshots/Monte Carlo, and automated regex prose scanning that flags ungrounded numeric figures. Loop-back in Supervisor maps specific failure categories to re-dispatching stages (`simulation`, `skeptic_review`, `report_draft`) with fresh SQLite checkpoints and `verification_loopback` telemetry. (118/118 tests pass, frontend build passes). |
 | **Round 2 — Fix 7** | SimulatorAdapter Interface, Price Model Polymorphism & Decision-Type Specific Reports | **COMPLETED** | Introduced runtime-checkable `SimulatorAdapter` protocol implemented by `FreePlanSimulatorAdapter` and `PriceChangeSimulatorAdapter` unifying simulation execution, scenario parameter generation, and strategy ranking. Specialist agents (CFO, Growth, Customer, Skeptic) dynamically generate decision-type aware findings and assumptions (`price_elasticity_starter`, `contraction_risk_rate`, `expansion_revenue_rate`) with benchmark backing (`data/benchmarks.json#price_elasticity_b2b_median`). Pricing conflict detection and simulation resolution enabled via DAG and resolver. Report builder delivers decision-type specific risks and execution plans with zero occurrences of free-plan wording in pricing reports. (121/121 tests pass, frontend build passes). |
 | **Round 2 — Fix 8** | Simulation-Driven Recommendation Conflicts, Rebuttal Consensus, Dynamic Flip Competitor & Signed Deltas | **COMPLETED** | Recommendation conflicts resolved strictly via simulation evaluation against runway safety floor and baseline contribution (supports proceed if feasible positive strategy exists, supports reject if none exists, marks `unresolved_material` if evidence is mixed; zero string matching). Converged status evaluated after rebuttal rounds with tripartite agreement across agent A, agent B, and merged baselines. Flip-point search dynamically selects rank-2 competitor and returns `exists: False` if parameters do not invert rankings within bounds. Formatted signed deltas (`{:+,.0f}`) eliminating `+$` negative values. (127/127 tests pass, frontend build passes). |
+| **Round 2 — Fix 9** | Strict Task Kind Dispatch, CI Audit Suite, Honest Docs & Acceptance V2 Suite | **COMPLETED** | Refactored `Supervisor._handle_supervisor_task` to dispatch strictly on `task.kind` (`agent_analysis`, `agent_discussion`, `conflict_detection`, `skeptic_review`, `simulation`, `report_draft`, `verification`, `report_finalize`), removing all substring fallbacks and raising `ValueError` on unsupported kinds. Updated `.github/workflows/ci.yml` with dedicated `acceptance-audit` job. Updated `README.md` with GitHub Actions badge, explicit LLM modes, synthetic data disclosures, and known limitations. Implemented complete 9-pillar acceptance test suite in `tests/test_acceptance_v2.py`. (136/136 tests pass, UI fake numbers check 0 violations, Vite build passes). |
 
 ---
 
-## Current Step 0 Details
+## Current Project Status & Honest Verification Audit
 
-- **What is Implemented:**
-  - Repository structure matching Section 5 (`orchestrator`, `agents`, `state`, `conflict`, `simulation`, `verification`, `report`, `data`, `api`, `ui`, `tests`, `docs`).
-  - Python 3.13 venv with `fastapi`, `uvicorn`, `pydantic v2`, `numpy`, `pandas`, `scipy`, `networkx`, `pytest`, `pytest-asyncio`, `aiosqlite`.
-  - Provider-agnostic `llm_call()` in `agents/llm.py` with structured Pydantic v2 validation, bounded retries, low temperature, and mock mode.
-  - FastAPI app with `/health` and `/api/health` endpoints.
-- **What is Mocked / Seeded:**
-  - LLM call defaults to deterministic mock mode for offline testing.
-- **How to Run Step 0 Tests:**
+- **What is Implemented (MVP-REAL):**
+  - **Task Dispatcher:** Strict `Task.kind` topological execution over an asynchronous DAG with SQLite task checkpoints and resumability.
+  - **Specialist Agents:** CFO, Growth, CTO, Customer, Skeptic, and BackupAnalyst with distinct prompts, tools, and structured outputs for both `free_plan` and `price_change` decisions.
+  - **Simulation Polymorphism:** `SimulatorAdapter` protocol driving both 24-month SaaS cohort simulations and multi-tier price elasticity mechanics.
+  - **Conflict Engine:** Grounded assumption divergence detection, data-driven multi-turn discussion, and simulation-based recommendation resolution evaluated against dynamic runway safety floors.
+  - **Monte Carlo Engine:** Triangular sampling across reconciled parameter bounds yielding empirical `p_feasible`, `p_best`, percentiles (p10/p50/p90), and 10-bin histograms.
+  - **Number Registry & Verifier:** Strict non-vacuous verifier validating monotonic scenario ordering, exact source-resolution against simulations/snapshots, and regex prose scanning flagging unregistered numbers with bounded supervisory loop-back.
+  - **Interactive Workspace:** Real REST endpoints (`/api/params`, `/api/decisions/{id}/trajectory`, `/api/decisions/{id}/resimulate`, `/api/decisions/{id}/ask`), dynamic what-if simulation, and Recharts Monte Carlo distribution visualizations.
+  - **Automated Verification:** 136 passing backend pytest unit and integration tests across 2 acceptance test suites (`test_acceptance.py` and `test_acceptance_v2.py`).
+  - **Frontend Build & Audit:** `ui/scripts/check-no-fake-numbers.mjs` running in CI with 0 mock numbers detected, and clean production Vite bundle.
+
+- **What is Mocked / Seeded (MVP-MOCK):**
+  - **Default LLM Provider:** Defaults to deterministic mock mode (`LLM_MODE=mock`) with structured specialist responses and fallback models for offline/fast test execution.
+  - **Company Snapshot:** Synthetic baseline company data seeded in `data/synthetic_company.json` (NimbusDesk, $145k MRR, $1.45M cash, 12.6 mo runway).
+  - **Industry Benchmarks:** Benchmark reference ranges in `data/benchmarks.json` flagged as illustrative synthetic SaaS data.
+
+- **How to Run Tests:**
   ```bash
-  .venv/bin/pytest tests/test_step0_skeleton.py -v
+  # Run all backend unit, integration, and acceptance tests (136 tests)
+  .venv/bin/pytest tests/ -v
+
+  # Run both Acceptance Suites explicitly
+  .venv/bin/pytest tests/test_acceptance.py tests/test_acceptance_v2.py -v
+
+  # Run Frontend fake-numbers audit and production build
+  npm --prefix ui run check:fake-numbers
+  npm --prefix ui run build
   ```
-- **Known Gaps:**
-  - Full domain schemas (Step 1) and agents (Step 2) are pending.
+
+- **Known Gaps & Future Roadmap:**
+  - Production cassette recording for Gemini real-mode end-to-end integration (`RECORDING PENDING: run python scripts/run_real_demo.py locally with GEMINI_API_KEY`).
+  - Live external CRM/billing connector integrations (e.g., Stripe, HubSpot, Salesforce) are roadmapped and not claimed.
