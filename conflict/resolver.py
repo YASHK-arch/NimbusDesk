@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from report.decision_logic import rank_strategies
 from simulation.params import SIM_PARAMS
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
+from simulation.adapter import SimulatorAdapter, get_simulator_adapter
 from simulation.sensitivity import find_flip_point
 from state.schemas import CompanySnapshot, Conflict, Finding, SimulationRun
 
@@ -22,12 +23,21 @@ def resolve_conflicts_with_simulation(
     findings: Dict[str, Finding],
     company: Optional[CompanySnapshot] = None,
     rebuttal_round: bool = False,
+    adapter: Optional[SimulatorAdapter] = None,
+    min_runway: float = 10.0,
 ) -> Tuple[List[Conflict], List[SimulationRun]]:
     """Resolve detected conflicts by executing simulations for competing agent assumptions.
 
     Returns:
         (resolved_conflicts, simulation_runs)
     """
+    if adapter is None:
+        is_price = any(
+            "price" in f.task_id.lower() or any("price" in a.name for a in f.assumptions)
+            for f in findings.values()
+        )
+        adapter = get_simulator_adapter("price_change" if is_price else "free_plan")
+
     simulation_runs: List[SimulationRun] = []
     processed_conflicts: List[Conflict] = []
 
@@ -64,19 +74,19 @@ def resolve_conflicts_with_simulation(
             params_b = dict(baseline_params)
             params_b[disputed_param] = val_b
 
-            # Run all 3 strategies for both sides
+            # Run all strategies for both sides
             runs_a = [
-                simulate(strat, f"conflict_{agent_a.lower()}", params_a, company=company)
-                for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+                adapter.simulate(strat, f"conflict_{agent_a.lower()}", params_a, company=company)
+                for strat in adapter.strategies
             ]
             runs_b = [
-                simulate(strat, f"conflict_{agent_b.lower()}", params_b, company=company)
-                for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+                adapter.simulate(strat, f"conflict_{agent_b.lower()}", params_b, company=company)
+                for strat in adapter.strategies
             ]
             simulation_runs.extend(runs_a + runs_b)
 
-            ranked_a = rank_strategies(runs_a, min_runway=10.0)
-            ranked_b = rank_strategies(runs_b, min_runway=10.0)
+            ranked_a = rank_strategies(runs_a, min_runway=min_runway)
+            ranked_b = rank_strategies(runs_b, min_runway=min_runway)
 
             top_a = ranked_a[0]
             top_b = ranked_b[0]
@@ -101,12 +111,14 @@ def resolve_conflicts_with_simulation(
             runway_delta = round(runway_b - runway_a, 2)
             contrib_delta = round(net_contrib_b - net_contrib_a, 2)
 
+            competing_strat = adapter.strategies[1] if top_a.strategy == adapter.strategies[0] else adapter.strategies[0]
             flip = find_flip_point(
                 primary_strategy=top_a.strategy,
-                competing_strategy=STRATEGY_C if top_a.strategy != STRATEGY_C else STRATEGY_B,
+                competing_strategy=competing_strat,
                 parameter_name=disputed_param,
                 base_assumptions=baseline_params,
                 company=company,
+                adapter=adapter,
             )
 
             # Check if ranges overlap (e.g. after a rebuttal round)
@@ -166,11 +178,11 @@ def resolve_conflicts_with_simulation(
 
             # Execute standard simulation for expected scenario
             runs = [
-                simulate(strat, "expected", baseline_params, company=company)
-                for strat in [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+                adapter.simulate(strat, "expected", baseline_params, company=company)
+                for strat in adapter.strategies
             ]
             simulation_runs.extend(runs)
-            ranked = rank_strategies(runs, min_runway=10.0)
+            ranked = rank_strategies(runs, min_runway=min_runway)
             top = ranked[0]
 
             is_feasible = top.feasible

@@ -87,9 +87,10 @@ class BaseAgent:
         )
 
         # 4. Invoke LLM with bounded retries and structured validation
+        decision_type = (state or {}).get("decision", {}).get("type", "free_plan") if isinstance(state, dict) else "free_plan"
         try:
             finding = await asyncio.wait_for(
-                self._execute_llm(user_prompt, task.id),
+                self._execute_llm(user_prompt, task.id, decision_type=decision_type),
                 timeout=self.timeout_seconds,
             )
             return finding
@@ -97,9 +98,9 @@ class BaseAgent:
             logger.error(f"Agent {self.name} timed out during LLM execution.")
             raise TimeoutError(f"Agent {self.name} exceeded execution limit of {self.timeout_seconds}s")
 
-    async def _execute_llm(self, user_prompt: str, task_id: str) -> Finding:
+    async def _execute_llm(self, user_prompt: str, task_id: str, decision_type: str = "free_plan") -> Finding:
         """Internal call to llm_call with fallback to specialized mock finding."""
-        canned_finding = self._generate_specialist_mock(task_id)
+        canned_finding = self._generate_specialist_mock(task_id, decision_type=decision_type)
         finding = await llm_call(
             prompt=user_prompt,
             response_model=Finding,
@@ -114,7 +115,7 @@ class BaseAgent:
                 asm.proposed_by = self.name
         return finding
 
-    def _generate_specialist_mock(self, task_id: str) -> Finding:
+    def _generate_specialist_mock(self, task_id: str, decision_type: str = "free_plan") -> Finding:
         """Generate a realistic, deterministic domain finding if LLM is in mock mode.
 
         Overridden by individual specialist agents.

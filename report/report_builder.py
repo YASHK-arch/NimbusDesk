@@ -103,12 +103,10 @@ def build_consolidated_report(
     }
 
     # 3. Strategy Comparison & Scenarios Table
-    is_price_change = state.decision and state.decision.type == "price_change"
-    if is_price_change:
-        from simulation.price_model import PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C
-        target_strategies = [PRICE_STRAT_A, PRICE_STRAT_B, PRICE_STRAT_C]
-    else:
-        target_strategies = [STRATEGY_A, STRATEGY_B, STRATEGY_C]
+    from simulation.adapter import get_simulator_adapter
+    adapter = get_simulator_adapter(state.decision.type if state.decision else None)
+    is_price_change = adapter.decision_type == "price_change"
+    target_strategies = adapter.strategies
 
     strategy_runs: Dict[str, Dict[str, Any]] = {}
     for r in state.simulation_runs:
@@ -157,8 +155,8 @@ def build_consolidated_report(
     ]
 
     # Determine primary strategy and competitor for flip point
-    top_strat_candidate = ranked[0].strategy if ranked else STRATEGY_B
-    competitor_candidate = STRATEGY_C if top_strat_candidate != STRATEGY_C else STRATEGY_B
+    top_strat_candidate = ranked[0].strategy if ranked else adapter.strategies[0]
+    competitor_candidate = adapter.strategies[1] if top_strat_candidate == adapter.strategies[0] else adapter.strategies[0]
 
     # 5. Sensitivity Tornado & Flip-Points
     reconciled = getattr(state, "reconciled", None) or reconcile_assumptions(state.assumptions, state.conflicts)
@@ -166,6 +164,7 @@ def build_consolidated_report(
         top_strat_candidate,
         reconciled=reconciled,
         company=company,
+        adapter=adapter,
     )
     for item in tornado_data:
         pname = item.get("assumption_name") or item.get("param") or "param"
@@ -179,6 +178,7 @@ def build_consolidated_report(
         primary_strategy=top_strat_candidate,
         competing_strategy=competitor_candidate,
         company=company,
+        adapter=adapter,
     )
     if flip_point_data.get("exists") and flip_point_data.get("flip_value") is not None:
         reg.n(flip_point_data["flip_value"], f"flip:{flip_point_data.get('disputed_param', 'param')}:flip_value")
@@ -221,15 +221,24 @@ def build_consolidated_report(
     elif ranked:
         least_bad = ranked[0]
         primary_strategy = least_bad.strategy
-        recommendation = f"Do not proceed with any free-plan strategy under current constraints; {least_bad.strategy} is least detrimental but violates the {min_runway:.1f}-month runway floor"
-        headline_thesis = (
-            f"Under current capital constraints (minimum runway >= {min_runway:.1f} months), "
-            f"all evaluated free-plan strategies result in unacceptable runway depletion. "
-            f"The least-negative strategy is {least_bad.strategy} with projected runway of "
-            f"{least_bad.runway_months_12:.1f} months and net contribution of ${least_bad.net_contribution_12:,.0f}."
-        )
+        if is_price_change:
+            recommendation = f"Do not proceed with pricing adjustments under current constraints; {least_bad.strategy} is least detrimental but violates the {min_runway:.1f}-month runway floor"
+            headline_thesis = (
+                f"Under current capital constraints (minimum runway >= {min_runway:.1f} months), "
+                f"all evaluated pricing strategies result in unacceptable runway depletion. "
+                f"The least-negative strategy is {least_bad.strategy} with projected runway of "
+                f"{least_bad.runway_months_12:.1f} months and net contribution of ${least_bad.net_contribution_12:,.0f}."
+            )
+        else:
+            recommendation = f"Do not proceed with any free-plan strategy under current constraints; {least_bad.strategy} is least detrimental but violates the {min_runway:.1f}-month runway floor"
+            headline_thesis = (
+                f"Under current capital constraints (minimum runway >= {min_runway:.1f} months), "
+                f"all evaluated free-plan strategies result in unacceptable runway depletion. "
+                f"The least-negative strategy is {least_bad.strategy} with projected runway of "
+                f"{least_bad.runway_months_12:.1f} months and net contribution of ${least_bad.net_contribution_12:,.0f}."
+            )
     else:
-        primary_strategy = STRATEGY_C
+        primary_strategy = adapter.strategies[0]
         recommendation = "Do not proceed: insufficient simulation data"
         headline_thesis = "Unable to verify financial feasibility due to missing simulation results."
 
@@ -269,26 +278,73 @@ def build_consolidated_report(
 
     # 7. Risks and Uncertainties (Templated from computed metrics)
     top_runway_disp = f"{ranked[0].runway_months_12:.1f}" if ranked else f"{company.runway_months:.1f}"
-    risks = [
-        {
-            "category": "Runway Compression Risk",
-            "description": (
-                f"If conversion falls below {flip_display}, cash burn accelerates and "
-                f"erodes projected runway from {top_runway_disp} months toward the {min_runway:.1f}-month floor."
-            ),
-            "mitigation": f"Establish strict monthly cohort milestones and abort if 60-day conversion remains below {flip_display}.",
-        },
-        {
-            "category": "Starter Plan Cannibalization",
-            "description": "Risk that existing paying customers downgrade to the unmetered free tier.",
-            "mitigation": f"Enforce usage caps and limit support SLAs so paid tiers preserve clear enterprise value.",
-        },
-        {
-            "category": "Support Saturation",
-            "description": f"Customer support team ({company.support['headcount']} reps) risks queue saturation if unmetered free users submit tickets.",
-            "mitigation": "Enforce community-only deflection and automated triage for non-paying users.",
-        },
-    ]
+    if is_price_change:
+        reg.n(60.0, "plan:cohort_days")
+        reg.n(90.0, "plan:grandfather_days")
+        reg.n(105.0, "plan:nrr_threshold")
+        risks = [
+            {
+                "category": "Contraction & Churn Acceleration",
+                "description": (
+                    f"Starter tier price elasticity may accelerate customer churn if sensitivity exceeds {flip_display}, "
+                    f"eroding projected runway from {top_runway_disp} months toward the {min_runway:.1f}-month floor."
+                ),
+                "mitigation": "Institute 90-day grandfathered legacy pricing for existing cohorts and restrict rate adjustments to new accounts.",
+            },
+            {
+                "category": "Competitive Substitution",
+                "description": "Risk that price-sensitive Starter customers migrate to low-cost market substitutes.",
+                "mitigation": "Bundle advanced automation and reporting features into adjusted tiers to maintain product differentiation.",
+            },
+            {
+                "category": "Expansion Velocity Friction",
+                "description": "Multi-tier price adjustments risk elongating mid-market upgrade cycles.",
+                "mitigation": "Introduce flexible annual contracts with locked pricing terms to incentivize longer commitments.",
+            },
+        ]
+        execution_plan = {
+            "phase_1_rollout": f"Targeted cohort pricing rollout under {primary_strategy} with churn monitoring.",
+            "phase_2_evaluation": "Audit 60-day cohort net revenue retention and expansion velocity across adjusted tiers.",
+            "phase_3_decision_gate": f"Expand pricing adjustments globally only if net churn remains below {flip_display}; otherwise revert.",
+            "metrics_to_monitor": [
+                f"Net Revenue Retention Rate (Threshold: >= 105%)",
+                f"Runway Floor Maintenance (Threshold: >= {min_runway:.1f} months)",
+                "Monthly Account Contraction Velocity",
+                "Starter Plan Logo Churn Rate",
+            ],
+        }
+    else:
+        risks = [
+            {
+                "category": "Runway Compression Risk",
+                "description": (
+                    f"If conversion falls below {flip_display}, cash burn accelerates and "
+                    f"erodes projected runway from {top_runway_disp} months toward the {min_runway:.1f}-month floor."
+                ),
+                "mitigation": f"Establish strict monthly cohort milestones and abort if 60-day conversion remains below {flip_display}.",
+            },
+            {
+                "category": "Starter Plan Cannibalization",
+                "description": "Risk that existing paying customers downgrade to the unmetered free tier.",
+                "mitigation": f"Enforce usage caps and limit support SLAs so paid tiers preserve clear enterprise value.",
+            },
+            {
+                "category": "Support Saturation",
+                "description": f"Customer support team ({company.support['headcount']} reps) risks queue saturation if unmetered free users submit tickets.",
+                "mitigation": "Enforce community-only deflection and automated triage for non-paying users.",
+            },
+        ]
+        execution_plan = {
+            "phase_1_rollout": f"Private beta rollout under {primary_strategy} with cohort tracking.",
+            "phase_2_evaluation": "Audit conversion velocity and AWS infrastructure connection pool utilization across active cohorts.",
+            "phase_3_decision_gate": f"Expand public rollout only if measured conversion exceeds {flip_display}; otherwise trigger rollback.",
+            "metrics_to_monitor": [
+                f"Free-to-Paid Conversion Rate (Threshold: >= {flip_display})",
+                f"Runway Floor Maintenance (Threshold: >= {min_runway:.1f} months)",
+                "Marginal Infrastructure Connection Headroom",
+                "Monthly Starter Plan Net Downgrades",
+            ],
+        }
 
     # 8. Verification Summary
     verification_summary = [
@@ -299,19 +355,6 @@ def build_consolidated_report(
         }
         for r in state.verification_results
     ]
-
-    # 9. Suggested Execution Plan & Key Metrics to Monitor
-    execution_plan = {
-        "phase_1_rollout": f"Private beta rollout under {primary_strategy} with cohort tracking.",
-        "phase_2_evaluation": "Audit conversion velocity and AWS infrastructure connection pool utilization across active cohorts.",
-        "phase_3_decision_gate": f"Expand public rollout only if measured conversion exceeds {flip_display}; otherwise trigger rollback.",
-        "metrics_to_monitor": [
-            f"Free-to-Paid Conversion Rate (Threshold: >= {flip_display})",
-            f"Runway Floor Maintenance (Threshold: >= {min_runway:.1f} months)",
-            "Marginal Infrastructure Connection Headroom",
-            "Monthly Starter Plan Net Downgrades",
-        ],
-    }
 
     # 10. Run Log & Telemetry
     run_log = [

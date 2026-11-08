@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from simulation.saas_model import simulate
 from simulation.reconcile import ReconciledParams, reconcile_assumptions
+from simulation.adapter import SimulatorAdapter, get_simulator_adapter
 from state.schemas import Assumption, CompanySnapshot, SimulationRun
 
 
@@ -17,6 +18,8 @@ def run_monte_carlo_suite(
     n_iterations: int = 300,
     seed: int = 42,
     min_runway: float = 10.0,
+    adapter: Optional[SimulatorAdapter] = None,
+    decision_type: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Execute Monte Carlo sampling simultaneously across strategies using reconciled parameters.
 
@@ -47,6 +50,14 @@ def run_monte_carlo_suite(
                 "high": high,
             }
 
+    if adapter is None:
+        if decision_type:
+            adapter = get_simulator_adapter(decision_type)
+        elif any("Raise" in s or "Hold Prices" in s or "20%" in s for s in strategies):
+            adapter = get_simulator_adapter("price_change")
+        else:
+            adapter = get_simulator_adapter("free_plan")
+
     # Samples accumulator per strategy
     strat_mrr: Dict[str, List[float]] = {s: [] for s in strategies}
     strat_runway: Dict[str, List[float]] = {s: [] for s in strategies}
@@ -68,25 +79,14 @@ def run_monte_carlo_suite(
         # 2. Evaluate all strategies on this exact realization
         iteration_results: Dict[str, Dict[str, Any]] = {}
         for s in strategies:
-            # Check if this strategy is pricing or free-plan
-            if "Strategy" in s and ("Hike" in s or "Hold" in s or "Pricing" in s or "20%" in s or "15%" in s):
-                from simulation.price_model import simulate_price_change
-                run = simulate_price_change(
-                    strategy=s,
-                    scenario="monte_carlo_sample",
-                    assumptions=sampled_params,
-                    company=company,
-                    months=12,
-                    seed=seed,
-                )
-            else:
-                run = simulate(
-                    strategy=s,
-                    scenario="monte_carlo_sample",
-                    assumptions=sampled_params,
-                    company=company,
-                    months=12,
-                )
+            run = adapter.simulate(
+                strategy=s,
+                scenario="monte_carlo_sample",
+                assumptions=sampled_params,
+                company=company,
+                months=12,
+                seed=seed,
+            )
 
             mrr_val = run.outputs["mrr_month_12"]
             runway_val = run.outputs["runway_months_12"]

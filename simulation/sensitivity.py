@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 from simulation.reconcile import ReconciledParams, reconcile_assumptions
 from simulation.saas_model import STRATEGY_A, STRATEGY_B, STRATEGY_C, simulate
+from simulation.adapter import SimulatorAdapter, get_simulator_adapter
 from state.schemas import Assumption, CompanySnapshot
 from state.company import load_company_snapshot
 
@@ -15,16 +16,26 @@ def compute_tornado_sensitivity(
     reconciled: Optional[ReconciledParams] = None,
     metric_key: str = "net_contribution_12",
     company: Optional[CompanySnapshot] = None,
+    adapter: Optional[SimulatorAdapter] = None,
+    decision_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Compute one-at-a-time (OAT) sensitivity swings for simulated parameters (Tornado Chart).
 
     Only iterates over simulated parameters (in SIM_PARAMS), de-duplicated and sorted by impact.
     """
+    if adapter is None:
+        if decision_type:
+            adapter = get_simulator_adapter(decision_type)
+        elif "Raise" in strategy or "Hold Prices" in strategy or "20%" in strategy:
+            adapter = get_simulator_adapter("price_change")
+        else:
+            adapter = get_simulator_adapter("free_plan")
+
     if reconciled is None:
         reconciled = reconcile_assumptions(assumptions_list or [])
 
     base_params = reconciled.simulated_params
-    base_run = simulate(strategy, "expected", base_params, company=company)
+    base_run = adapter.simulate(strategy, "expected", base_params, company=company)
     baseline_value = base_run.outputs[metric_key]
 
     tornado_items: List[Dict[str, Any]] = []
@@ -35,12 +46,12 @@ def compute_tornado_sensitivity(
 
         # High run
         high_params = copy_and_set(base_params, param.name, param.high)
-        high_run = simulate(strategy, "oat_high", high_params, company=company)
+        high_run = adapter.simulate(strategy, "oat_high", high_params, company=company)
         high_val = high_run.outputs[metric_key]
 
         # Low run
         low_params = copy_and_set(base_params, param.name, param.low)
-        low_run = simulate(strategy, "oat_low", low_params, company=company)
+        low_run = adapter.simulate(strategy, "oat_low", low_params, company=company)
         low_val = low_run.outputs[metric_key]
 
         swing = abs(high_val - low_val)
@@ -71,6 +82,8 @@ def find_flip_point(
     steps: int = 110,
     base_assumptions: Optional[Dict[str, float]] = None,
     company: Optional[CompanySnapshot] = None,
+    adapter: Optional[SimulatorAdapter] = None,
+    decision_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Find the exact threshold where the winning strategy flips.
 
@@ -78,6 +91,14 @@ def find_flip_point(
     If outcomes at both bounds have the same sign, returns exists=False with an honest
     statement and no fabricated midpoint fallback.
     """
+    if adapter is None:
+        if decision_type:
+            adapter = get_simulator_adapter(decision_type)
+        elif "Raise" in primary_strategy or "Hold Prices" in primary_strategy or "20%" in primary_strategy:
+            adapter = get_simulator_adapter("price_change")
+        else:
+            adapter = get_simulator_adapter("free_plan")
+
     if company is None:
         company = load_company_snapshot()
 
@@ -94,7 +115,7 @@ def find_flip_point(
 
     def eval_outcome(val: float) -> float:
         curr_params = copy_and_set(base_assumptions, parameter_name, val)
-        primary_run = simulate(primary_strategy, "flip_search", curr_params, company=company)
+        primary_run = adapter.simulate(primary_strategy, "flip_search", curr_params, company=company)
         return primary_run.outputs["net_contribution_12"]
 
     val_low = eval_outcome(param_min)
