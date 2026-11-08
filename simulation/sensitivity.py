@@ -113,19 +113,25 @@ def find_flip_point(
 
     base_val = base_assumptions.get(parameter_name, (param_min + param_max) / 2.0)
 
-    def eval_outcome(val: float) -> float:
+    def eval_diff(val: float) -> float:
         curr_params = copy_and_set(base_assumptions, parameter_name, val)
         primary_run = adapter.simulate(primary_strategy, "flip_search", curr_params, company=company)
-        return primary_run.outputs["net_contribution_12"]
+        # In free-plan model, Strategy C represents baseline status-quo break-even (0 net contribution threshold)
+        if "Funnel Optimization" in competing_strategy or (competing_strategy == STRATEGY_C and adapter.decision_type == "free_plan"):
+            return primary_run.outputs["net_contribution_12"]
+        competing_run = adapter.simulate(competing_strategy, "flip_search", curr_params, company=company)
+        return primary_run.outputs["net_contribution_12"] - competing_run.outputs["net_contribution_12"]
 
-    val_low = eval_outcome(param_min)
-    val_high = eval_outcome(param_max)
+    val_low = eval_diff(param_min)
+    val_high = eval_diff(param_max)
 
     # If both bounds have the same sign, no flip point exists in range
     if (val_low > 0 and val_high > 0) or (val_low < 0 and val_high < 0) or (val_low == 0 and val_high == 0):
         superior = val_low > 0
         statement = (
             f"No flip point within tested range [{param_min}, {param_max}]. "
+            f"Disputed parameter '{parameter_name}' does not change the ranking between {primary_strategy} and {competing_strategy} "
+            f"within tested bounds [{param_min}, {param_max}]. "
             f"Strategy {primary_strategy} remains {'superior' if superior else 'inferior'} "
             f"across the entire tested interval."
         )
@@ -152,11 +158,11 @@ def find_flip_point(
     f_hi = val_high
 
     mid = (lo + hi) / 2.0
-    f_mid = eval_outcome(mid)
+    f_mid = eval_diff(mid)
 
     for _ in range(30):
         mid = (lo + hi) / 2.0
-        f_mid = eval_outcome(mid)
+        f_mid = eval_diff(mid)
         if abs(f_mid) < 1.0 or (hi - lo) < 1e-5:
             break
         if (f_lo > 0 and f_mid > 0) or (f_lo < 0 and f_mid < 0):
