@@ -332,6 +332,9 @@ class Supervisor:
         kind = getattr(task, "kind", None)
 
         if kind == "agent_discussion" or "discussion" in task.id:
+            from pathlib import Path
+            import json
+
             # 1. Record initial proposals from specialist agent findings
             for agent_name, finding in state.findings.items():
                 if finding.agent != "Skeptic":
@@ -345,50 +348,111 @@ class Supervisor:
                         )
                     )
 
-            # 2. Skeptic posts critiques challenging Growth and CFO conversion bounds
-            growth_critique = Message(
-                sender="Skeptic",
-                recipient="Growth",
-                kind="critique",
-                content=(
-                    "Growth conversion projection of 4.5% (range 3.5%-6.5%) significantly exceeds the 2.2% B2B SaaS benchmark "
-                    "median from data/benchmarks.json. In unmetered ticketing, top-of-funnel friction collapse does not guarantee paid expansion."
-                ),
-            )
-            cfo_critique = Message(
-                sender="Skeptic",
-                recipient="CFO",
-                kind="critique",
-                content=(
-                    "CFO conversion floor of 1.5% (range 1.0%-2.2%) assumes extreme customer reluctance and overstates cannibalization at 12%. "
-                    "Features like enterprise SAML and audit logs will prevent mature accounts from downgrading."
-                ),
-            )
-            state.messages.extend([growth_critique, cfo_critique])
+            # 2. Load benchmarks data for data-driven critiques
+            benchmarks_path = Path(__file__).resolve().parent.parent / "data" / "benchmarks.json"
+            benchmarks: Dict[str, Any] = {}
+            if benchmarks_path.exists():
+                try:
+                    with open(benchmarks_path, "r", encoding="utf-8") as f:
+                        benchmarks = json.load(f)
+                except Exception as e:
+                    logger.warning("Could not load benchmarks.json: %s", e)
 
-            # 3. Growth and CFO reply with rebuttals
-            growth_rebuttal = Message(
-                sender="Growth",
-                recipient="Skeptic",
-                kind="rebuttal",
-                content=(
-                    "Rebuttal: Modern product-led growth data demonstrates organic invite virality. "
-                    "With onboarding checklists and 14-day premium feature previews, 3.5%-6.5% conversion is empirically defensible."
-                ),
-            )
-            cfo_rebuttal = Message(
-                sender="CFO",
-                recipient="Skeptic",
-                kind="rebuttal",
-                content=(
-                    "Rebuttal: Capital preservation dictates that runway cannot depend on optimistic virality. "
-                    "Historical trial conversion in compliance-sensitive B2B workflows remains anchored below 2.0%."
-                ),
-            )
-            state.messages.extend([growth_rebuttal, cfo_rebuttal])
+            bench_map = {
+                b["metric"]: b["value"]
+                for b in benchmarks.values()
+                if isinstance(b, dict) and "metric" in b and "value" in b
+            }
 
-            # Emit message events for event streaming
-            for msg in [growth_critique, cfo_critique, growth_rebuttal, cfo_rebuttal]:
+            # 3. Skeptic dynamically critiques assumptions deviating from benchmarks or with wide ranges
+            critiques: List[Message] = []
+            for agent_name, finding in state.findings.items():
+                if finding.agent == "Skeptic" or getattr(finding, "degraded", False):
+                    continue
+
+                for asm in finding.assumptions:
+                    if asm.name in bench_map:
+                        bench_val = bench_map[asm.name]
+                        ratio = asm.base / bench_val if bench_val > 0 else 1.0
+                        if ratio > 1.20 or ratio < 0.80:
+                            critique = Message(
+                                sender="Skeptic",
+                                recipient=finding.agent,
+                                kind="critique",
+                                parameter=asm.name,
+                                challenged_value=asm.base,
+                                benchmark_reference=bench_val,
+                                content=(
+                                    f"Skeptic Critique: {finding.agent}'s proposed {asm.name} of {asm.base} "
+                                    f"deviates significantly from illustrative B2B SaaS benchmark median ({bench_val}). "
+                                    f"Please justify this interval against customer friction and churn risks."
+                                ),
+                            )
+                            critiques.append(critique)
+                    elif asm.high / max(asm.low, 1e-4) > 2.2:
+                        critique = Message(
+                            sender="Skeptic",
+                            recipient=finding.agent,
+                            kind="critique",
+                            parameter=asm.name,
+                            challenged_value=asm.base,
+                            benchmark_reference=None,
+                            content=(
+                                f"Skeptic Critique: {finding.agent}'s proposed {asm.name} interval [{asm.low}, {asm.high}] "
+                                f"exhibits wide uncertainty (>2.2x spread). Please provide operational justification."
+                            ),
+                        )
+                        critiques.append(critique)
+
+            # Fallback critique if all parameters aligned with benchmarks
+            if not critiques:
+                for agent_name, finding in state.findings.items():
+                    if finding.agent != "Skeptic" and finding.assumptions:
+                        top_asm = finding.assumptions[0]
+                        critiques.append(
+                            Message(
+                                sender="Skeptic",
+                                recipient=finding.agent,
+                                kind="critique",
+                                parameter=top_asm.name,
+                                challenged_value=top_asm.base,
+                                content=f"Skeptic Audit: Requesting confirmation of {top_asm.name} baseline ({top_asm.base}).",
+                            )
+                        )
+                        break
+
+            state.messages.extend(critiques)
+
+            # 4. Critiqued agents respond with bounded, evidence-grounded rebuttals
+            rebuttals: List[Message] = []
+            for crit in critiques:
+                target_finding = state.findings.get(crit.recipient)
+                if not target_finding:
+                    continue
+
+                snippet = target_finding.evidence[0].snippet if target_finding.evidence else "internal metrics"
+                source = target_finding.evidence[0].source_type if target_finding.evidence else "operational analysis"
+
+                reb = Message(
+                    sender=crit.recipient,
+                    recipient="Skeptic",
+                    kind="rebuttal",
+                    parameter=crit.parameter,
+                    challenged_value=crit.challenged_value,
+                    benchmark_reference=crit.benchmark_reference,
+                    concession_made=False,
+                    rationale=f"Maintained based on {source}: {snippet}",
+                    content=(
+                        f"Rebuttal from {crit.recipient}: Position maintained on {crit.parameter}. "
+                        f"Our model is calibrated against {snippet}; divergence from macro median is intentional."
+                    ),
+                )
+                rebuttals.append(reb)
+
+            state.messages.extend(rebuttals)
+
+            # 5. Emit event stream notifications
+            for msg in critiques + rebuttals:
                 await self.bus.emit(
                     event_type="message_posted",
                     agent=msg.sender,

@@ -62,6 +62,11 @@ class Message(BaseModel):
     recipient: str  # agent name or "all"
     kind: Literal["proposal", "critique", "rebuttal", "query"]
     content: str
+    parameter: Optional[str] = None
+    challenged_value: Optional[float] = None
+    benchmark_reference: Optional[float] = None
+    concession_made: bool = False
+    rationale: Optional[str] = None
     assumptions: List[Assumption] = Field(default_factory=list)
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
