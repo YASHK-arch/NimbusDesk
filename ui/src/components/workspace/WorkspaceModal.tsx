@@ -227,7 +227,7 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
   isOpen,
   onClose,
   activeTab,
-  onTabChange,
+  onTabChange: _onTabChange,
   company,
   decisionQuery,
   setDecisionQuery,
@@ -265,26 +265,13 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
 
   const meta = TAB_METAS[activeTab] || TAB_METAS.new_simulation;
 
-  const NAV_PILLS: { tab: WorkspaceModalTab; label: string }[] = [
-    { tab: 'new_simulation', label: 'New Simulation' },
-    { tab: 'report', label: 'Executive Report' },
-    { tab: 'dag', label: 'Live DAG & Chaos' },
-    { tab: 'monte_carlo', label: 'Monte Carlo' },
-    { tab: 'what_if', label: 'What-If Sandbox' },
-    { tab: 'scenario_comparison', label: 'Scenarios' },
-    { tab: 'break_even', label: 'Break-Even' },
-    { tab: 'validator', label: 'Model Validator' },
-    { tab: 'company', label: 'Company Baseline' },
-    { tab: 'calibration', label: 'Calibration' },
-  ];
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/40 backdrop-blur-xs animate-fade-in">
       <div
         className="w-full max-w-5xl max-h-[92vh] flex flex-col bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden text-gray-900"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar */}
+        {/* Header Bar - Focused single purpose dialog, no duplicate toolbars */}
         <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -313,26 +300,6 @@ export const WorkspaceModal: React.FC<WorkspaceModalProps> = ({
             >
               <X className="w-5 h-5" />
             </button>
-          </div>
-
-          {/* Clean Light-Themed Secondary Navigation Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pt-3 mt-3 border-t border-gray-100 scrollbar-none">
-            {NAV_PILLS.map((p) => {
-              const active = activeTab === p.tab;
-              return (
-                <button
-                  key={p.tab}
-                  onClick={() => onTabChange(p.tab)}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition ${
-                    active
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
           </div>
         </div>
 
