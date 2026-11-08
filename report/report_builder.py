@@ -129,7 +129,7 @@ def build_consolidated_report(
     competitor_candidate = STRATEGY_C if top_strat_candidate != STRATEGY_C else STRATEGY_B
 
     # 5. Sensitivity Tornado & Flip-Points
-    reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
+    reconciled = getattr(state, "reconciled", None) or reconcile_assumptions(state.assumptions, state.conflicts)
     tornado_data = compute_tornado_sensitivity(
         top_strat_candidate,
         reconciled=reconciled,

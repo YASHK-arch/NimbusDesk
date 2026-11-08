@@ -436,6 +436,16 @@ class Supervisor:
             return {"status": "skeptic_review_completed", "challenges_count": len(challenges)}
 
         elif kind == "simulation" or "simulation" in task.id:
+            from report.decision_logic import extract_min_runway_constraint
+            from simulation.reconcile import reconcile_assumptions
+            from simulation.monte_carlo import run_monte_carlo_suite
+
+            # Extract dynamic runway floor from constraints or CFO assumptions
+            min_runway = extract_min_runway_constraint(state.decision.constraints, state.assumptions)
+
+            # Reconcile assumptions once as the single source of truth for the entire workflow
+            state.reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
+
             # Handle pricing decision simulation
             if state.decision and state.decision.type == "price_change":
                 from simulation.price_model import (
@@ -449,7 +459,7 @@ class Supervisor:
                 core_scenarios = ["conservative", "expected", "optimistic"]
                 for strat in price_strategies:
                     for scen in core_scenarios:
-                        params = build_scenario_params(state.assumptions, scen)
+                        params = build_scenario_params(state.reconciled.parameters, scen)
                         run = simulate_price_change(strat, scen, params, company=load_company_snapshot(), seed=42)
                         state.simulation_runs.append(run)
                         await self.bus.emit(
@@ -458,16 +468,13 @@ class Supervisor:
                             payload={"simulation_id": run.id, "strategy": strat, "scenario": scen},
                         )
                 # Run Monte Carlo probability distributions for pricing strategies
-                from simulation.monte_carlo import run_monte_carlo_suite
-                from simulation.reconcile import reconcile_assumptions
-                reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
                 mc_results = run_monte_carlo_suite(
                     strategies=price_strategies,
-                    reconciled_params=reconciled,
+                    reconciled_params=state.reconciled,
                     company=load_company_snapshot(),
                     n_iterations=250,
                     seed=42,
-                    min_runway=10.0,
+                    min_runway=min_runway,
                 )
                 state.mc_summaries = mc_results
                 return {"status": "pricing_simulations_completed", "runs_count": len(state.simulation_runs)}
@@ -482,10 +489,10 @@ class Supervisor:
             core_scenarios = ["conservative", "expected", "optimistic"]
             stress_scenarios = ["stress_infra_doubles", "stress_conversion_collapse", "stress_large_customer_churn"]
 
-            # Core scenarios with favorable/unfavorable bounds
+            # Core scenarios with favorable/unfavorable bounds using reconciled parameters
             for strat in strategies:
                 for scen in core_scenarios:
-                    params = build_scenario_params(state.assumptions, scen)
+                    params = build_scenario_params(state.reconciled.parameters, scen)
                     run = simulate(strat, scen, params)
                     state.simulation_runs.append(run)
                     await self.bus.emit(
@@ -495,7 +502,7 @@ class Supervisor:
                     )
 
             # Stress scenarios applied against expected base parameters
-            base_params = build_scenario_params(state.assumptions, "expected")
+            base_params = build_scenario_params(state.reconciled.parameters, "expected")
             for strat in strategies:
                 for scen in stress_scenarios:
                     run = simulate(strat, scen, base_params)
@@ -507,16 +514,13 @@ class Supervisor:
                     )
 
             # 3. Run Monte Carlo probability distributions across all strategies
-            from simulation.monte_carlo import run_monte_carlo_suite
-            from simulation.reconcile import reconcile_assumptions
-            reconciled = reconcile_assumptions(state.assumptions, state.conflicts)
             mc_results = run_monte_carlo_suite(
                 strategies=strategies,
-                reconciled_params=reconciled,
+                reconciled_params=state.reconciled,
                 company=load_company_snapshot(),
                 n_iterations=250,
                 seed=42,
-                min_runway=10.0,
+                min_runway=min_runway,
             )
             state.mc_summaries = mc_results
 

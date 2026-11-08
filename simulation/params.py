@@ -100,8 +100,10 @@ def build_scenario_params(
                 param_bounds[k] = (float(v), float(v), float(v))
     else:
         for asm in assumptions_input:
-            if isinstance(asm, Assumption):
+            if hasattr(asm, "name") and hasattr(asm, "low") and hasattr(asm, "base") and hasattr(asm, "high"):
                 param_bounds[asm.name] = (asm.low, asm.base, asm.high)
+            elif isinstance(asm, dict) and "name" in asm:
+                param_bounds[asm["name"]] = (float(asm["low"]), float(asm["base"]), float(asm["high"]))
 
     resolved: Dict[str, float] = {}
 
