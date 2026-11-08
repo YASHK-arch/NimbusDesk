@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from api.graph import get_company_dependency_graph
+from agents.llm import get_llm_mode, get_llm_provider, get_llm_model
 from orchestrator.checkpoint import CheckpointStore
 from orchestrator.decomposer import decompose_decision
 from orchestrator.parser import parse_decision_query
@@ -105,20 +106,38 @@ class AskAssistantRequest(BaseModel):
 
 @app.get("/health")
 async def health_check():
+    mode = get_llm_mode()
+    provider = get_llm_provider() if mode not in ("mock", "replay") else os.getenv("LLM_PROVIDER", mode)
+    try:
+        model = get_llm_model()
+    except Exception:
+        model = "none"
     return {
         "status": "ok",
         "app": "VentureTwin",
         "version": "0.1.0",
-        "mock_mode": os.getenv("LLM_MOCK_MODE", "true").lower() in ("true", "1", "yes"),
+        "llm_mode": mode,
+        "provider": provider,
+        "model": model,
+        "mock_mode": mode == "mock",
     }
 
 
 @app.get("/api/health")
 async def api_health_check():
+    mode = get_llm_mode()
+    provider = get_llm_provider() if mode not in ("mock", "replay") else os.getenv("LLM_PROVIDER", mode)
+    try:
+        model = get_llm_model()
+    except Exception:
+        model = "none"
     return {
         "status": "ok",
         "service": "VentureTwin Multi-Agent Orchestration Platform",
         "synthetic_data": True,
+        "llm_mode": mode,
+        "provider": provider,
+        "model": model,
     }
 
 

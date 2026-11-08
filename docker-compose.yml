@@ -9,7 +9,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - LLM_MOCK_MODE=true
+      - LLM_MODE=mock
     volumes:
       # Persist SQLite checkpoints and runtime data across container restarts
       - ./data:/app/data

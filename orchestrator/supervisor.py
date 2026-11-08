@@ -190,6 +190,22 @@ class Supervisor:
         state.status = "completed"
         return state
 
+    def _build_analysis_context(self, agent_name: str, state: Optional[WorkflowState] = None) -> Dict[str, Any]:
+        """Provide isolated context to analysis agents: decision and company snapshot only (no peer findings)."""
+        target_state = state or getattr(self, "state", None)
+        decision_data = {}
+        company_data = None
+        if target_state:
+            decision_data = target_state.decision.model_dump() if hasattr(target_state.decision, "model_dump") else target_state.decision
+            if hasattr(target_state, "company") and target_state.company:
+                company_data = target_state.company.model_dump() if hasattr(target_state.company, "model_dump") else target_state.company
+        if not company_data:
+            company_data = load_company_snapshot().model_dump()
+        return {
+            "decision": decision_data,
+            "company": company_data,
+        }
+
     async def _execute_single_task(
         self,
         task: Task,
@@ -216,9 +232,10 @@ class Supervisor:
                 if agent:
                     finding: Optional[Finding] = None
                     task.attempts = 1
+                    analysis_context = self._build_analysis_context(task.owner_agent, state=state)
                     fail_1 = self._get_failure_for_attempt(target_keys, 1, injected_failures)
                     try:
-                        finding = await agent.run(task=task, state=state.model_dump(), failure_mode=fail_1)
+                        finding = await agent.run(task=task, state=analysis_context, failure_mode=fail_1)
                     except Exception as first_exc:
                         await self.bus.emit(
                             event_type="agent_failed",
@@ -235,7 +252,7 @@ class Supervisor:
 
                         fail_2 = self._get_failure_for_attempt(target_keys, 2, injected_failures)
                         try:
-                            finding = await agent.run(task=task, state=state.model_dump(), failure_mode=fail_2)
+                            finding = await agent.run(task=task, state=analysis_context, failure_mode=fail_2)
                             await self.bus.emit(
                                 event_type="recovery_done",
                                 agent="Supervisor",
@@ -264,8 +281,43 @@ class Supervisor:
 
                     state.findings[agent.name] = finding
 
-                    # Collect proposed assumptions
+                    # Whitelist and clamp assumptions from agent finding
+                    from simulation.params import SIM_PARAMS
+                    price_param_names = {"price_elasticity_starter", "price_elasticity_growth", "expansion_revenue_rate", "contraction_risk_rate"}
+                    allowed_params = set(SIM_PARAMS.keys()) | price_param_names
+
                     for asm in finding.assumptions:
+                        if asm.name not in allowed_params:
+                            state.ignored_assumptions.append({
+                                "agent": task.owner_agent,
+                                "name": asm.name,
+                                "base": asm.base,
+                                "reason": "Not in simulator parameter whitelist; recorded as operational context assumption"
+                            })
+                        else:
+                            meta = SIM_PARAMS.get(asm.name)
+                            if meta and "bounds" in meta:
+                                min_val, max_val = meta["bounds"]
+                                clamped = False
+                                orig_base = asm.base
+                                if asm.base < min_val or asm.base > max_val:
+                                    asm.base = max(min_val, min(max_val, asm.base))
+                                    clamped = True
+                                if asm.low < min_val or asm.low > max_val:
+                                    asm.low = max(min_val, min(max_val, asm.low))
+                                    clamped = True
+                                if asm.high < min_val or asm.high > max_val:
+                                    asm.high = max(min_val, min(max_val, asm.high))
+                                    clamped = True
+                                if clamped:
+                                    state.clamped_assumptions.append({
+                                        "agent": task.owner_agent,
+                                        "name": asm.name,
+                                        "original_base": orig_base,
+                                        "clamped_base": asm.base,
+                                        "bounds": [min_val, max_val]
+                                    })
+
                         if not any(existing.name == asm.name and existing.proposed_by == asm.proposed_by for existing in state.assumptions):
                             state.assumptions.append(asm)
 

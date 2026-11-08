@@ -37,7 +37,7 @@ COPY --from=frontend-builder /app/ui/dist ./ui/dist
 
 EXPOSE 8000
 
-ENV LLM_MOCK_MODE=true
+ENV LLM_MODE=mock
 ENV PYTHONUNBUFFERED=1
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
